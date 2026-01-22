@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
 
@@ -6,13 +6,11 @@ from datetime import datetime
 class URLExtractionRequest(BaseModel):
     """Request model for extracting images from a URL"""
     url: str = Field(..., description="Public URL of the PDF file to extract images from")
-    output_format: Optional[str] = Field(None, description="Desired output format (png, jpg, jpeg)")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "url": "http://example.com/document.pdf",
-                "output_format": "png"
+                "url": "http://example.com/document.pdf"
             }
         }
 

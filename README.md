@@ -25,7 +25,7 @@ Después de una investigación exhaustiva de las bibliotecas disponibles en 2026
 - ✅ Extracción rápida y confiable de imágenes de PDFs
 - ✅ **Dos métodos de extracción**: desde archivo multipart/form-data o desde URL pública
 - ✅ API REST con documentación automática (Swagger/OpenAPI)
-- ✅ Soporte para múltiples formatos de salida (PNG, JPG/JPEG)
+- ✅ ZIP con imágenes embebidas + renders de páginas (PNG)
 - ✅ Dockerizado con Docker Compose
 - ✅ Configuración mediante variables de entorno
 - ✅ Metadata detallada de cada imagen extraída
@@ -99,7 +99,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 5050
 
 ## Uso de la API
 
-La API ofrece **dos métodos** para extraer imágenes de PDFs:
+La API ofrece **dos métodos** para extraer imágenes de PDFs y siempre devuelve un **ZIP**:
 
 1. **Upload de archivo** (`POST /api/v1/extract`): Sube un archivo PDF desde tu sistema
 2. **Desde URL pública** (`POST /api/v1/extract-from-url`): Proporciona una URL pública de un PDF
@@ -111,51 +111,31 @@ La API ofrece **dos métodos** para extraer imágenes de PDFs:
 3. Haz clic en **Try it out**.
 4. Completa los parámetros:
    - Para `POST /api/v1/extract`, selecciona un PDF en el campo `file`.
-   - (Opcional) agrega `output_format` con `png`, `jpg` o `jpeg`.
 5. Presiona **Execute** y revisa la respuesta.
 
 Ejemplo rápido:
 - Endpoint: `POST /api/v1/extract`
-- Params: `output_format=png`
 - file: selecciona `tu-archivo.pdf`
 
 Respuesta esperada (200):
-```json
-{
-  "success": true,
-  "message": "Images extracted successfully",
-  "total_pages": 10,
-  "total_images": 5,
-  "images": [
-    {
-      "filename": "page_1_img_1.png",
-      "page_number": 1,
-      "width": 1920,
-      "height": 1080,
-      "format": "png",
-      "size_bytes": 245678,
-      "color_space": "DeviceRGB"
-    }
-  ],
-  "extraction_time": 0.45,
-  "timestamp": "2026-01-21T10:30:00"
-}
-```
+- Se descarga un archivo `.zip` con todas las imágenes embebidas y los renders de página.
 
-### Endpoint: Extraer imágenes
+### Endpoint: Extraer imágenes (archivo)
 
 **POST** `/api/v1/extract`
 
-Sube un archivo PDF y extrae todas las imágenes.
+Sube un archivo PDF y devuelve un ZIP con:
+- Renders de cada página en PNG
+- Imágenes embebidas (en su formato original)
 
 #### Usando cURL:
 
 ```bash
 curl -X POST "http://localhost:5050/api/v1/extract" \
-  -H "accept: application/json" \
+  -H "accept: application/zip" \
   -H "Content-Type: multipart/form-data" \
   -F "file=@your-file.pdf" \
-  -F "output_format=png"
+  -o extracted_images.zip
 ```
 
 #### Usando Python:
@@ -165,10 +145,10 @@ import requests
 
 url = "http://localhost:5050/api/v1/extract"
 files = {"file": open("your-file.pdf", "rb")}
-params = {"output_format": "png"}
 
-response = requests.post(url, files=files, params=params)
-print(response.json())
+response = requests.post(url, files=files)
+with open("extracted_images.zip", "wb") as f:
+    f.write(response.content)
 ```
 
 #### Usando el script de ejemplo:
@@ -181,30 +161,28 @@ python example_client.py
 
 **POST** `/api/v1/extract-from-url`
 
-Descarga un PDF desde una URL pública y extrae todas las imágenes.
+Descarga un PDF desde una URL pública y devuelve un ZIP con las imágenes.
 
 #### Usando cURL:
 
 ```bash
 curl -X POST "http://localhost:5050/api/v1/extract-from-url" \
-  -H "accept: application/json" \
   -H "Content-Type: application/json" \
   -d '{
-    "url": "http://example.com/document.pdf",
-    "output_format": "png"
-  }'
+    "url": "http://example.com/document.pdf"
+  }' \
+  -o extracted_images.zip
 ```
 
 #### Ejemplo con URL real:
 
 ```bash
 curl -X POST "http://localhost:5050/api/v1/extract-from-url" \
-  -H "accept: application/json" \
   -H "Content-Type: application/json" \
   -d '{
-    "url": "http://149.130.164.187:2020/files/download/by-name/MERCHANT-Newsletter-Dic25%20%281%29.pdf",
-    "output_format": "png"
-  }'
+    "url": "http://149.130.164.187:2020/files/download/by-name/MERCHANT-Newsletter-Dic25%20%281%29.pdf"
+  }' \
+  -o extracted_images.zip
 ```
 
 #### Usando Python:
@@ -214,42 +192,22 @@ import requests
 
 url = "http://localhost:5050/api/v1/extract-from-url"
 payload = {
-    "url": "http://example.com/document.pdf",
-    "output_format": "png"
+    "url": "http://example.com/document.pdf"
 }
 
 response = requests.post(url, json=payload)
-print(response.json())
+with open("extracted_images.zip", "wb") as f:
+    f.write(response.content)
 ```
 
-#### Usando el script de prueba:
+### Contenido del ZIP (ejemplo):
 
-```bash
-python test_url_extraction.py
 ```
-
-### Respuesta de ejemplo:
-
-```json
-{
-  "success": true,
-  "message": "Images extracted successfully",
-  "total_pages": 10,
-  "total_images": 5,
-  "images": [
-    {
-      "filename": "page_1_img_1.png",
-      "page_number": 1,
-      "width": 1920,
-      "height": 1080,
-      "format": "png",
-      "size_bytes": 245678,
-      "color_space": "DeviceRGB"
-    }
-  ],
-  "extraction_time": 0.45,
-  "timestamp": "2026-01-21T10:30:00"
-}
+document_images/
+  page001_render.png
+  page001_img01_xref12.png
+  page002_render.png
+  page002_img01_xref17.jpg
 ```
 
 ### Endpoint: Health Check
@@ -291,8 +249,7 @@ MAX_FILE_SIZE=50  # MB
 ALLOWED_EXTENSIONS=pdf
 
 # Configuración de salida
-OUTPUT_FORMAT=png  # png, jpg, jpeg
-IMAGE_QUALITY=95
+# Nota: el ZIP incluye renders PNG a 200 DPI y las imágenes embebidas en su formato original.
 ```
 
 ## Estructura del proyecto
@@ -350,10 +307,9 @@ Estas interfaces proporcionan documentación interactiva donde puedes probar tod
 
 ### Manejo de imágenes
 
-- Preserva la calidad original de las imágenes
-- Convierte automáticamente entre formatos (PNG, JPEG)
-- Maneja correctamente imágenes RGBA al convertir a JPEG
-- Optimiza el tamaño de archivo sin pérdida de calidad
+- Renderiza cada página a PNG (DPI 200)
+- Extrae imágenes embebidas en su formato original
+- Empaqueta todo en un ZIP para descarga inmediata
 
 ### Seguridad
 

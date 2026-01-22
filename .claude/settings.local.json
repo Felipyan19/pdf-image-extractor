@@ -4,7 +4,10 @@
       "Bash(timeout /t 5 /nobreak)",
       "Bash(python test_url_extraction.py:*)",
       "Bash(dir \"c:\\\\Users\\\\felip\\\\Desktop\\\\Codes\\\\Micro-Services\\\\pdf-image-extractor\\\\outputs\")",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(unzip:*)",
+      "Bash(docker-compose restart:*)",
+      "Bash(docker-compose logs:*)"
     ]
   }
 }

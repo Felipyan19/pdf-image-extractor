@@ -1,6 +1,7 @@
 import fitz  # PyMuPDF
 import os
 import time
+import zipfile
 from pathlib import Path
 from typing import List, Dict, Tuple
 from PIL import Image
@@ -123,6 +124,75 @@ class PDFImageExtractor:
 
         extraction_time = time.time() - start_time
         return images_info, extraction_time
+
+    def extract_images_and_renders(
+        self,
+        pdf_path: str,
+        output_subdir: str = None,
+        render_dpi: int = 200
+    ) -> Tuple[Path, Path, int, int, float]:
+        """
+        Extract embedded images and render each page to PNG, then package everything into a ZIP.
+
+        Args:
+            pdf_path: Path to the PDF file
+            output_subdir: Optional subdirectory name for outputs
+            render_dpi: DPI for rendered page images
+
+        Returns:
+            Tuple of (output directory, zip path, render count, total files, extraction time)
+        """
+        start_time = time.time()
+
+        if output_subdir:
+            output_path = self.output_dir / output_subdir
+        else:
+            output_path = self.output_dir / Path(pdf_path).stem
+
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        pdf_document = fitz.open(pdf_path)
+
+        extracted_files = []
+        render_count = 0
+
+        try:
+            for page_index in range(len(pdf_document)):
+                page = pdf_document[page_index]
+                page_no = page_index + 1
+
+                # Render full page
+                pix = page.get_pixmap(dpi=render_dpi)
+                render_name = output_path / f"page{page_no:03d}_render.png"
+                pix.save(str(render_name))
+                extracted_files.append(render_name)
+                render_count += 1
+
+                # Extract embedded images
+                image_list = page.get_images(full=True)
+                for img_i, img in enumerate(image_list, start=1):
+                    xref = img[0]
+                    base = pdf_document.extract_image(xref)
+                    img_bytes = base["image"]
+                    ext = base.get("ext", "bin")
+
+                    img_name = output_path / f"page{page_no:03d}_img{img_i:02d}_xref{xref}.{ext}"
+                    with open(img_name, "wb") as f:
+                        f.write(img_bytes)
+
+                    extracted_files.append(img_name)
+
+        finally:
+            pdf_document.close()
+
+        # Create ZIP with all generated files
+        zip_path = self.output_dir / f"{output_path.name}.zip"
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for file_path in extracted_files:
+                zf.write(file_path, arcname=file_path.relative_to(output_path.parent))
+
+        extraction_time = time.time() - start_time
+        return output_path, zip_path, render_count, len(extracted_files), extraction_time
 
     def _convert_and_save_image(self, image_bytes: bytes, output_path: Path, target_format: str):
         """

@@ -1,13 +1,15 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, status, Body
+from fastapi.responses import FileResponse
 from pathlib import Path
-import os
 import shutil
 import requests
-from typing import Optional
 from urllib.parse import urlparse, unquote
+from uuid import uuid4
+import tempfile
+import os
 
 from app.config import settings
-from app.models.schemas import ExtractionResponse, HealthResponse, ErrorResponse, URLExtractionRequest
+from app.models.schemas import HealthResponse, ErrorResponse, URLExtractionRequest
 from app.services.image_extractor import PDFImageExtractor
 
 
@@ -15,26 +17,38 @@ router = APIRouter()
 extractor = PDFImageExtractor()
 
 
+def _cleanup_paths(*paths: Path) -> None:
+    """Clean up temporary files and directories."""
+    for path in paths:
+        try:
+            p = Path(path)
+            if p.is_dir():
+                shutil.rmtree(p, ignore_errors=True)
+            elif p.exists():
+                p.unlink()
+        except Exception:
+            pass
+
+
 @router.post(
     "/extract",
-    response_model=ExtractionResponse,
+    response_class=FileResponse,
     responses={
+        200: {"content": {"application/zip": {}}},
         400: {"model": ErrorResponse},
         413: {"model": ErrorResponse},
         500: {"model": ErrorResponse}
     },
     summary="Extract images from PDF",
-    description="Upload a PDF file and extract all images from it. Images will be saved in the specified format."
+    description="Upload a PDF file, extract embedded images and render pages, then return a ZIP with all images."
 )
 async def extract_images(
-    file: UploadFile = File(..., description="PDF file to extract images from"),
-    output_format: Optional[str] = None
+    file: UploadFile = File(..., description="PDF file to extract images from")
 ):
     """
     Extract all images from an uploaded PDF file.
 
     - **file**: PDF file to process (required)
-    - **output_format**: Desired output format (png, jpg, jpeg) - defaults to settings
     """
     # Validate file extension
     if not file.filename.endswith('.pdf'):
@@ -43,83 +57,84 @@ async def extract_images(
             detail="Only PDF files are allowed"
         )
 
-    # Create upload directory if it doesn't exist
-    upload_dir = Path(settings.upload_dir)
-    upload_dir.mkdir(parents=True, exist_ok=True)
+    # Create temporary file for PDF
+    pdf_fd, pdf_temp_path = tempfile.mkstemp(suffix='.pdf', prefix='upload_')
+    os.close(pdf_fd)
+    pdf_path = Path(pdf_temp_path)
 
-    # Save uploaded file
-    file_path = upload_dir / file.filename
+    output_dir = None
+    zip_path = None
+
     try:
-        with open(file_path, "wb") as buffer:
+        # Save uploaded file to temp location
+        with open(pdf_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save uploaded file: {str(e)}"
-        )
 
-    # Check file size
-    file_size_mb = file_path.stat().st_size / (1024 * 1024)
-    if file_size_mb > settings.max_file_size:
-        file_path.unlink()  # Delete the file
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File size ({file_size_mb:.2f}MB) exceeds maximum allowed size ({settings.max_file_size}MB)"
-        )
-
-    # Set output format if provided
-    if output_format:
-        original_format = extractor.output_format
-        extractor.output_format = output_format.lower()
-
-    try:
-        # Get PDF info
-        pdf_info = extractor.get_pdf_info(str(file_path))
+        # Check file size
+        file_size_mb = pdf_path.stat().st_size / (1024 * 1024)
+        if file_size_mb > settings.max_file_size:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File size ({file_size_mb:.2f}MB) exceeds maximum allowed size ({settings.max_file_size}MB)"
+            )
 
         # Extract images
-        images_info, extraction_time = extractor.extract_images(
-            str(file_path),
-            output_subdir=Path(file.filename).stem
+        output_subdir = f"{Path(file.filename).stem}_{uuid4().hex[:8]}"
+        output_dir, zip_path, render_count, total_files, extraction_time = (
+            extractor.extract_images_and_renders(
+                str(pdf_path),
+                output_subdir=output_subdir
+            )
         )
 
-        # Create response
-        response = ExtractionResponse(
-            success=True,
-            message="Images extracted successfully",
-            total_pages=pdf_info["page_count"],
-            total_images=len(images_info),
-            images=images_info,
-            extraction_time=extraction_time
+        # Read ZIP into memory
+        with open(zip_path, 'rb') as f:
+            zip_content = f.read()
+
+        # Create temporary file for response
+        zip_fd, zip_temp_path = tempfile.mkstemp(suffix='.zip', prefix='response_')
+        os.close(zip_fd)
+        with open(zip_temp_path, 'wb') as f:
+            f.write(zip_content)
+
+        # Clean up extraction artifacts immediately
+        _cleanup_paths(output_dir, zip_path)
+
+        return FileResponse(
+            path=zip_temp_path,
+            media_type="application/zip",
+            filename=f"{Path(file.filename).stem}_images.zip",
+            background=None
         )
 
-        return response
-
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error extracting images: {str(e)}"
         )
-
     finally:
-        # Clean up uploaded file
-        if file_path.exists():
-            file_path.unlink()
-
-        # Restore original format if it was changed
-        if output_format:
-            extractor.output_format = original_format
+        # Clean up uploaded PDF
+        _cleanup_paths(pdf_path)
+        # Clean up any remaining extraction artifacts
+        if output_dir:
+            _cleanup_paths(output_dir)
+        if zip_path:
+            _cleanup_paths(zip_path)
 
 
 @router.post(
     "/extract-from-url",
-    response_model=ExtractionResponse,
+    response_class=FileResponse,
     responses={
+        200: {"content": {"application/zip": {}}},
         400: {"model": ErrorResponse},
         413: {"model": ErrorResponse},
         500: {"model": ErrorResponse}
     },
     summary="Extract images from PDF URL",
-    description="Download a PDF from a public URL and extract all images from it."
+    description="Download a PDF from a public URL, extract images and renders, then return a ZIP."
 )
 async def extract_images_from_url(
     request: URLExtractionRequest = Body(..., description="URL extraction request")
@@ -128,10 +143,8 @@ async def extract_images_from_url(
     Extract all images from a PDF file accessible via public URL.
 
     - **url**: Public URL of the PDF file (required)
-    - **output_format**: Desired output format (png, jpg, jpeg) - defaults to settings
     """
     pdf_url = request.url
-    output_format = request.output_format
 
     # Validate URL format
     try:
@@ -153,11 +166,13 @@ async def extract_images_from_url(
     if not filename.lower().endswith('.pdf'):
         filename = f"{filename}.pdf" if filename else "downloaded.pdf"
 
-    # Create upload directory if it doesn't exist
-    upload_dir = Path(settings.upload_dir)
-    upload_dir.mkdir(parents=True, exist_ok=True)
+    # Create temporary file for downloaded PDF
+    pdf_fd, pdf_temp_path = tempfile.mkstemp(suffix='.pdf', prefix='download_')
+    os.close(pdf_fd)
+    pdf_path = Path(pdf_temp_path)
 
-    file_path = upload_dir / filename
+    output_dir = None
+    zip_path = None
 
     try:
         # Download PDF from URL
@@ -176,12 +191,49 @@ async def extract_images_from_url(
                     detail="URL does not point to a valid PDF file"
                 )
 
-        # Save downloaded file
-        with open(file_path, 'wb') as f:
+        # Save downloaded file to temp location
+        with open(pdf_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
 
-        print(f"PDF downloaded successfully: {file_path}")
+        print(f"PDF downloaded successfully to temp file")
+
+        # Check file size
+        file_size_mb = pdf_path.stat().st_size / (1024 * 1024)
+        if file_size_mb > settings.max_file_size:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File size ({file_size_mb:.2f}MB) exceeds maximum allowed size ({settings.max_file_size}MB)"
+            )
+
+        # Extract images
+        output_subdir = f"{Path(filename).stem}_{uuid4().hex[:8]}"
+        output_dir, zip_path, render_count, total_files, extraction_time = (
+            extractor.extract_images_and_renders(
+                str(pdf_path),
+                output_subdir=output_subdir
+            )
+        )
+
+        # Read ZIP into memory
+        with open(zip_path, 'rb') as f:
+            zip_content = f.read()
+
+        # Create temporary file for response
+        zip_fd, zip_temp_path = tempfile.mkstemp(suffix='.zip', prefix='response_')
+        os.close(zip_fd)
+        with open(zip_temp_path, 'wb') as f:
+            f.write(zip_content)
+
+        # Clean up extraction artifacts immediately
+        _cleanup_paths(output_dir, zip_path)
+
+        return FileResponse(
+            path=zip_temp_path,
+            media_type="application/zip",
+            filename=f"{Path(filename).stem}_images.zip",
+            background=None
+        )
 
     except requests.exceptions.Timeout:
         raise HTTPException(
@@ -193,64 +245,21 @@ async def extract_images_from_url(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to download PDF from URL: {str(e)}"
         )
-    except Exception as e:
-        if file_path.exists():
-            file_path.unlink()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error downloading file: {str(e)}"
-        )
-
-    # Check file size
-    file_size_mb = file_path.stat().st_size / (1024 * 1024)
-    if file_size_mb > settings.max_file_size:
-        file_path.unlink()
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File size ({file_size_mb:.2f}MB) exceeds maximum allowed size ({settings.max_file_size}MB)"
-        )
-
-    # Set output format if provided
-    if output_format:
-        original_format = extractor.output_format
-        extractor.output_format = output_format.lower()
-
-    try:
-        # Get PDF info
-        pdf_info = extractor.get_pdf_info(str(file_path))
-
-        # Extract images
-        images_info, extraction_time = extractor.extract_images(
-            str(file_path),
-            output_subdir=Path(filename).stem
-        )
-
-        # Create response
-        response = ExtractionResponse(
-            success=True,
-            message=f"Images extracted successfully from URL",
-            total_pages=pdf_info["page_count"],
-            total_images=len(images_info),
-            images=images_info,
-            extraction_time=extraction_time
-        )
-
-        return response
-
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error extracting images: {str(e)}"
+            detail=f"Error processing PDF: {str(e)}"
         )
-
     finally:
-        # Clean up downloaded file
-        if file_path.exists():
-            file_path.unlink()
-
-        # Restore original format if it was changed
-        if output_format:
-            extractor.output_format = original_format
+        # Clean up downloaded PDF
+        _cleanup_paths(pdf_path)
+        # Clean up any remaining extraction artifacts
+        if output_dir:
+            _cleanup_paths(output_dir)
+        if zip_path:
+            _cleanup_paths(zip_path)
 
 
 @router.get(
