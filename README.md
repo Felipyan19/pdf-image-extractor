@@ -23,6 +23,7 @@ Después de una investigación exhaustiva de las bibliotecas disponibles en 2026
 ## Características
 
 - ✅ Extracción rápida y confiable de imágenes de PDFs
+- ✅ **Dos métodos de extracción**: desde archivo multipart/form-data o desde URL pública
 - ✅ API REST con documentación automática (Swagger/OpenAPI)
 - ✅ Soporte para múltiples formatos de salida (PNG, JPG/JPEG)
 - ✅ Dockerizado con Docker Compose
@@ -98,6 +99,11 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 5050
 
 ## Uso de la API
 
+La API ofrece **dos métodos** para extraer imágenes de PDFs:
+
+1. **Upload de archivo** (`POST /api/v1/extract`): Sube un archivo PDF desde tu sistema
+2. **Desde URL pública** (`POST /api/v1/extract-from-url`): Proporciona una URL pública de un PDF
+
 ### Probar en Swagger UI (recomendado)
 
 1. Abre la documentación interactiva: http://localhost:5050/docs
@@ -169,6 +175,57 @@ print(response.json())
 
 ```bash
 python example_client.py
+```
+
+### Método 2: Extraer desde URL pública
+
+**POST** `/api/v1/extract-from-url`
+
+Descarga un PDF desde una URL pública y extrae todas las imágenes.
+
+#### Usando cURL:
+
+```bash
+curl -X POST "http://localhost:5050/api/v1/extract-from-url" \
+  -H "accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "http://example.com/document.pdf",
+    "output_format": "png"
+  }'
+```
+
+#### Ejemplo con URL real:
+
+```bash
+curl -X POST "http://localhost:5050/api/v1/extract-from-url" \
+  -H "accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "http://149.130.164.187:2020/files/download/by-name/MERCHANT-Newsletter-Dic25%20%281%29.pdf",
+    "output_format": "png"
+  }'
+```
+
+#### Usando Python:
+
+```python
+import requests
+
+url = "http://localhost:5050/api/v1/extract-from-url"
+payload = {
+    "url": "http://example.com/document.pdf",
+    "output_format": "png"
+}
+
+response = requests.post(url, json=payload)
+print(response.json())
+```
+
+#### Usando el script de prueba:
+
+```bash
+python test_url_extraction.py
 ```
 
 ### Respuesta de ejemplo:

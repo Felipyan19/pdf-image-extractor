@@ -73,6 +73,18 @@ class PDFImageExtractor:
                     height = base_image.get("height", 0)
                     colorspace = base_image.get("colorspace", "unknown")
 
+                    # Convert colorspace to string if it's an integer
+                    if isinstance(colorspace, int):
+                        # Map common PyMuPDF colorspace integers to names
+                        colorspace_map = {
+                            1: "DeviceGray",
+                            3: "DeviceRGB",
+                            4: "DeviceCMYK"
+                        }
+                        colorspace = colorspace_map.get(colorspace, f"Colorspace-{colorspace}")
+                    elif not isinstance(colorspace, str):
+                        colorspace = str(colorspace)
+
                     # Generate output filename
                     output_filename = f"page_{page_num + 1}_img_{image_counter}.{self.output_format}"
                     output_filepath = output_path / output_filename
