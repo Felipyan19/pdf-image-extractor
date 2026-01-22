@@ -36,6 +36,13 @@ class ImageInfo(BaseModel):
     format: str
     size_bytes: int
     color_space: Optional[str] = None
+    # Coordinates in PDF page (in points, where 72 points = 1 inch)
+    x0: Optional[float] = None  # Left X coordinate
+    y0: Optional[float] = None  # Top Y coordinate
+    x1: Optional[float] = None  # Right X coordinate
+    y1: Optional[float] = None  # Bottom Y coordinate
+    bbox_width: Optional[float] = None  # Width in PDF points
+    bbox_height: Optional[float] = None  # Height in PDF points
 
 
 class ExtractionResponse(BaseModel):

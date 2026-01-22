@@ -2,6 +2,7 @@ import fitz  # PyMuPDF
 import os
 import time
 import zipfile
+import json
 from pathlib import Path
 from typing import List, Dict, Tuple
 from PIL import Image
@@ -133,6 +134,7 @@ class PDFImageExtractor:
     ) -> Tuple[Path, Path, int, int, float]:
         """
         Extract embedded images and render each page to PNG, then package everything into a ZIP.
+        Also generates a metadata.json file with coordinates and details of each image.
 
         Args:
             pdf_path: Path to the PDF file
@@ -155,6 +157,7 @@ class PDFImageExtractor:
 
         extracted_files = []
         render_count = 0
+        images_metadata = []
 
         try:
             for page_index in range(len(pdf_document)):
@@ -168,7 +171,7 @@ class PDFImageExtractor:
                 extracted_files.append(render_name)
                 render_count += 1
 
-                # Extract embedded images
+                # Extract embedded images with coordinates
                 image_list = page.get_images(full=True)
                 for img_i, img in enumerate(image_list, start=1):
                     xref = img[0]
@@ -176,14 +179,96 @@ class PDFImageExtractor:
                     img_bytes = base["image"]
                     ext = base.get("ext", "bin")
 
+                    # Get image bounding box (coordinates in the page)
+                    # Pass the full image tuple, not just xref
+                    try:
+                        bbox = page.get_image_bbox(img)
+                    except Exception as e:
+                        # If bbox cannot be determined, use None values
+                        print(f"Warning: Could not get bbox for image xref {xref}: {e}")
+                        bbox = None
+
+                    # Get image properties
+                    width = base.get("width", 0)
+                    height = base.get("height", 0)
+                    colorspace = base.get("colorspace", "unknown")
+
+                    # Convert colorspace to string if needed
+                    if isinstance(colorspace, int):
+                        colorspace_map = {
+                            1: "DeviceGray",
+                            3: "DeviceRGB",
+                            4: "DeviceCMYK"
+                        }
+                        colorspace = colorspace_map.get(colorspace, f"Colorspace-{colorspace}")
+                    elif not isinstance(colorspace, str):
+                        colorspace = str(colorspace)
+
                     img_name = output_path / f"page{page_no:03d}_img{img_i:02d}_xref{xref}.{ext}"
                     with open(img_name, "wb") as f:
                         f.write(img_bytes)
 
                     extracted_files.append(img_name)
 
+                    # Get file size
+                    file_size = img_name.stat().st_size
+
+                    # Create ImageInfo with coordinates
+                    if bbox:
+                        img_info = ImageInfo(
+                            filename=img_name.name,
+                            page_number=page_no,
+                            width=width,
+                            height=height,
+                            format=ext,
+                            size_bytes=file_size,
+                            color_space=colorspace,
+                            x0=bbox.x0,
+                            y0=bbox.y0,
+                            x1=bbox.x1,
+                            y1=bbox.y1,
+                            bbox_width=bbox.width,
+                            bbox_height=bbox.height
+                        )
+                    else:
+                        # No bbox available
+                        img_info = ImageInfo(
+                            filename=img_name.name,
+                            page_number=page_no,
+                            width=width,
+                            height=height,
+                            format=ext,
+                            size_bytes=file_size,
+                            color_space=colorspace,
+                            x0=None,
+                            y0=None,
+                            x1=None,
+                            y1=None,
+                            bbox_width=None,
+                            bbox_height=None
+                        )
+
+                    images_metadata.append(img_info.model_dump())
+
         finally:
             pdf_document.close()
+
+        # Create metadata.json file
+        metadata_content = {
+            "pdf_file": Path(pdf_path).name,
+            "total_pages": render_count,
+            "total_images": len(images_metadata),
+            "extraction_time": time.time() - start_time,
+            "render_dpi": render_dpi,
+            "note": "Coordinates are in PDF points (72 points = 1 inch). Origin (0,0) is at bottom-left of page.",
+            "images": images_metadata
+        }
+
+        metadata_path = output_path / "metadata.json"
+        with open(metadata_path, "w", encoding="utf-8") as f:
+            json.dump(metadata_content, f, indent=2, ensure_ascii=False)
+
+        extracted_files.append(metadata_path)
 
         # Create ZIP with all generated files
         zip_path = self.output_dir / f"{output_path.name}.zip"
