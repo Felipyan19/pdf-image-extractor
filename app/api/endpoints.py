@@ -34,21 +34,58 @@ def _cleanup_paths(*paths: Path) -> None:
     "/extract",
     response_class=FileResponse,
     responses={
-        200: {"content": {"application/zip": {}}},
-        400: {"model": ErrorResponse},
-        413: {"model": ErrorResponse},
-        500: {"model": ErrorResponse}
+        200: {
+            "description": "ZIP file containing all extracted images and page renders",
+            "content": {"application/zip": {}}
+        },
+        400: {
+            "model": ErrorResponse,
+            "description": "Invalid file format (only PDF allowed)"
+        },
+        413: {
+            "model": ErrorResponse,
+            "description": "File size exceeds maximum allowed limit"
+        },
+        500: {
+            "model": ErrorResponse,
+            "description": "Server error during image extraction"
+        }
     },
-    summary="Extract images from PDF",
-    description="Upload a PDF file, extract embedded images and render pages, then return a ZIP with all images."
+    summary="📤 Extract images from uploaded PDF",
+    description="""
+    Upload a PDF file and extract all embedded images plus page renders.
+
+    **Returns:** A ZIP file containing:
+    - Page renders (PNG at 200 DPI) - one per page
+    - Embedded images (original format: JPEG, PNG, etc.)
+
+    **Example:** Upload `document.pdf` → Get `document_images.zip`
+
+    **Notes:**
+    - Only PDF files are accepted
+    - Files are processed in memory - nothing is stored
+    - Automatic cleanup after download
+    - Maximum file size: 50 MB (configurable)
+    """
 )
 async def extract_images(
-    file: UploadFile = File(..., description="PDF file to extract images from")
+    file: UploadFile = File(..., description="PDF file to extract images from (max 50MB)")
 ):
     """
     Extract all images from an uploaded PDF file.
 
-    - **file**: PDF file to process (required)
+    The endpoint will:
+    1. Validate the PDF file
+    2. Extract embedded images in their original format
+    3. Render each page as high-quality PNG
+    4. Package everything into a ZIP file
+    5. Clean up all temporary files automatically
+
+    **Parameters:**
+    - **file**: PDF file to process (required, max 50MB)
+
+    **Returns:**
+    - ZIP file with all extracted images and renders
     """
     # Validate file extension
     if not file.filename.endswith('.pdf'):
@@ -128,21 +165,100 @@ async def extract_images(
     "/extract-from-url",
     response_class=FileResponse,
     responses={
-        200: {"content": {"application/zip": {}}},
-        400: {"model": ErrorResponse},
-        413: {"model": ErrorResponse},
-        500: {"model": ErrorResponse}
+        200: {
+            "description": "ZIP file containing all extracted images and page renders",
+            "content": {"application/zip": {}}
+        },
+        400: {
+            "model": ErrorResponse,
+            "description": "Invalid URL or URL does not point to a valid PDF"
+        },
+        408: {
+            "model": ErrorResponse,
+            "description": "Request timeout while downloading PDF"
+        },
+        413: {
+            "model": ErrorResponse,
+            "description": "Downloaded file size exceeds maximum allowed limit"
+        },
+        500: {
+            "model": ErrorResponse,
+            "description": "Server error during PDF download or image extraction"
+        }
     },
-    summary="Extract images from PDF URL",
-    description="Download a PDF from a public URL, extract images and renders, then return a ZIP."
+    summary="🔗 Extract images from PDF URL",
+    description="""
+    Download a PDF from a public URL and extract all embedded images plus page renders.
+
+    **Returns:** A ZIP file containing:
+    - Page renders (PNG at 200 DPI) - one per page
+    - Embedded images (original format: JPEG, PNG, etc.)
+
+    **Example Request:**
+    ```json
+    {
+      "url": "http://example.com/document.pdf"
+    }
+    ```
+
+    **Example Response:** `document_images.zip`
+
+    **Requirements:**
+    - URL must be publicly accessible (no authentication)
+    - URL must point to a valid PDF file
+    - File size must not exceed 50 MB
+
+    **Notes:**
+    - Files are downloaded to temporary storage
+    - Automatic validation of PDF format
+    - Complete cleanup after processing
+    - 30 second timeout for downloads
+    """
 )
 async def extract_images_from_url(
-    request: URLExtractionRequest = Body(..., description="URL extraction request")
+    request: URLExtractionRequest = Body(
+        ...,
+        description="URL extraction request",
+        openapi_examples={
+            "example1": {
+                "summary": "Basic PDF URL",
+                "description": "Extract from a simple PDF URL",
+                "value": {
+                    "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
+                }
+            },
+            "example2": {
+                "summary": "URL with encoding",
+                "description": "Extract from URL with spaces (encoded)",
+                "value": {
+                    "url": "http://example.com/files/my%20document.pdf"
+                }
+            }
+        }
+    )
 ):
     """
     Extract all images from a PDF file accessible via public URL.
 
-    - **url**: Public URL of the PDF file (required)
+    The endpoint will:
+    1. Download the PDF from the provided URL
+    2. Validate it's a proper PDF file
+    3. Extract embedded images in their original format
+    4. Render each page as high-quality PNG
+    5. Package everything into a ZIP file
+    6. Clean up all temporary files automatically
+
+    **Parameters:**
+    - **url**: Public URL of the PDF file (required, must be accessible without auth)
+
+    **Returns:**
+    - ZIP file with all extracted images and renders
+
+    **Error Cases:**
+    - 400: Invalid URL format or not a PDF
+    - 408: Download timeout (>30 seconds)
+    - 413: File too large (>50 MB)
+    - 500: Extraction or server error
     """
     pdf_url = request.url
 
@@ -265,12 +381,42 @@ async def extract_images_from_url(
 @router.get(
     "/health",
     response_model=HealthResponse,
-    summary="Health check",
-    description="Check if the API is running and get basic information"
+    summary="🏥 Health check",
+    description="""
+    Verify the API service status and get basic information.
+
+    **Returns:**
+    ```json
+    {
+      "status": "healthy",
+      "app_name": "PDF Image Extractor",
+      "version": "1.0.0",
+      "timestamp": "2026-01-22T02:00:00"
+    }
+    ```
+
+    **Use this endpoint to:**
+    - Monitor service availability
+    - Verify API is responding
+    - Check current version
+    - Health check for load balancers/monitoring tools
+    """,
+    responses={
+        200: {
+            "description": "Service is healthy and running",
+            "model": HealthResponse
+        }
+    }
 )
 async def health_check():
     """
     Health check endpoint to verify the service is running.
+
+    **Returns:**
+    - Service status (always "healthy" if responding)
+    - Application name
+    - Current version
+    - Current timestamp
     """
     return HealthResponse(
         status="healthy",

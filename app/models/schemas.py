@@ -5,13 +5,25 @@ from datetime import datetime
 
 class URLExtractionRequest(BaseModel):
     """Request model for extracting images from a URL"""
-    url: str = Field(..., description="Public URL of the PDF file to extract images from")
+    url: str = Field(
+        ...,
+        description="Public URL of the PDF file to extract images from",
+        examples=[
+            "http://example.com/document.pdf",
+            "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
+        ]
+    )
 
     class Config:
         json_schema_extra = {
-            "example": {
-                "url": "http://example.com/document.pdf"
-            }
+            "examples": [
+                {
+                    "url": "http://example.com/document.pdf"
+                },
+                {
+                    "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
+                }
+            ]
         }
 
 
@@ -39,15 +51,37 @@ class ExtractionResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     """Health check response"""
-    status: str
-    app_name: str
-    version: str
-    timestamp: datetime = Field(default_factory=datetime.now)
+    status: str = Field(..., description="Service health status", examples=["healthy"])
+    app_name: str = Field(..., description="Application name", examples=["PDF Image Extractor"])
+    version: str = Field(..., description="Application version", examples=["1.0.0"])
+    timestamp: datetime = Field(default_factory=datetime.now, description="Current server timestamp")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "healthy",
+                "app_name": "PDF Image Extractor",
+                "version": "1.0.0",
+                "timestamp": "2026-01-22T02:00:00.000000"
+            }
+        }
 
 
 class ErrorResponse(BaseModel):
     """Error response model"""
-    success: bool = False
-    error: str
-    detail: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.now)
+    detail: str = Field(..., description="Error message describing what went wrong")
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "detail": "Only PDF files are allowed"
+                },
+                {
+                    "detail": "File size (75.5MB) exceeds maximum allowed size (50MB)"
+                },
+                {
+                    "detail": "Failed to download PDF from URL: 404 Client Error"
+                }
+            ]
+        }
