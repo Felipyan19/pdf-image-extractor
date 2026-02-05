@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, status, Body
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Body, Path as PathParam, Request
 from fastapi.responses import FileResponse
 from pathlib import Path
 import shutil
@@ -7,6 +7,8 @@ from urllib.parse import urlparse, unquote
 from uuid import uuid4
 import tempfile
 import os
+import re
+import mimetypes
 
 from app.config import settings
 from app.models.schemas import HealthResponse, ErrorResponse, URLExtractionRequest
@@ -15,6 +17,38 @@ from app.services.image_extractor import PDFImageExtractor
 
 router = APIRouter()
 extractor = PDFImageExtractor()
+
+# Session manager will be initialized in main.py
+session_manager = None
+
+
+def set_session_manager(manager):
+    """Set the global session manager instance."""
+    global session_manager
+    session_manager = manager
+
+
+def validate_session_id(session_id: str) -> bool:
+    """Validate session ID format (32-character hex string)."""
+    return bool(re.match(r'^[a-f0-9]{32}$', session_id))
+
+
+def validate_filename(filename: str) -> bool:
+    """Validate filename to prevent path traversal attacks."""
+    # Reject paths containing '..' or path separators
+    if any(char in filename for char in ['/', '\\', '..', '\0']):
+        return False
+    # Must have valid image extension
+    valid_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp']
+    return any(filename.lower().endswith(ext) for ext in valid_extensions)
+
+
+def get_base_url(request: Request) -> str:
+    """Get base URL from settings or auto-detect from request."""
+    if settings.base_url:
+        return settings.base_url.rstrip('/')
+    # Auto-detect from request
+    return f"{request.url.scheme}://{request.url.netloc}"
 
 
 def _cleanup_paths(*paths: Path) -> None:
@@ -30,9 +64,142 @@ def _cleanup_paths(*paths: Path) -> None:
             pass
 
 
+@router.get(
+    "/images/{session_id}/{filename}",
+    response_class=FileResponse,
+    responses={
+        200: {
+            "description": "Image file",
+            "content": {"image/*": {}}
+        },
+        400: {
+            "model": ErrorResponse,
+            "description": "Invalid session ID or filename"
+        },
+        404: {
+            "model": ErrorResponse,
+            "description": "Session or image not found"
+        },
+        410: {
+            "model": ErrorResponse,
+            "description": "Session has expired"
+        }
+    },
+    summary="🖼️ Get extracted image",
+    description="""
+    Retrieve a specific extracted image from a temporary session.
+
+    **Usage:**
+    1. Extract images from PDF using `/extract` or `/extract-from-url`
+    2. Get session_id from response headers (X-Session-ID)
+    3. Open metadata.json from the ZIP to get image URLs
+    4. Access images directly via this endpoint
+
+    **Example:**
+    ```
+    GET /api/v1/images/abc123def456.../page001_img01_xref12.png
+    ```
+
+    **Session Expiry:**
+    - Sessions expire after {ttl_hours} hour(s)
+    - After expiry, images are automatically deleted
+    - Returns 410 Gone if session has expired
+
+    **Security:**
+    - Session IDs are validated (32-character hex)
+    - Filenames are validated to prevent path traversal
+    - Only image files can be accessed
+    """.format(ttl_hours=settings.session_ttl_hours)
+)
+async def get_session_image(
+    session_id: str = PathParam(..., description="Session ID from extraction (32-char hex string)"),
+    filename: str = PathParam(..., description="Image filename (e.g., page001_img01_xref12.png)")
+):
+    """
+    Retrieve a specific extracted image from a session.
+
+    **Parameters:**
+    - **session_id**: Unique session identifier (UUID hex format)
+    - **filename**: Name of the image file to retrieve
+
+    **Returns:**
+    - Image file with appropriate content-type
+
+    **Error Cases:**
+    - 400: Invalid session ID format or filename
+    - 404: Session or file not found
+    - 410: Session has expired
+    """
+    # Check if public URLs feature is enabled
+    if not settings.enable_public_urls:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Public URLs feature is not enabled"
+        )
+
+    # Check if session manager is initialized
+    if session_manager is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Session manager not initialized"
+        )
+
+    # Validate session ID format
+    if not validate_session_id(session_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid session ID format"
+        )
+
+    # Validate filename
+    if not validate_filename(filename):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid filename: {filename}"
+        )
+
+    # Check if session exists
+    session = session_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session not found: {session_id}"
+        )
+
+    # Check if session has expired
+    if session_manager.is_session_expired(session_id):
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail=f"Session has expired at {session.expires_at.isoformat()}"
+        )
+
+    # Construct file path
+    file_path = session.output_dir / filename
+
+    # Check if file exists
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Image not found: {filename}"
+        )
+
+    # Determine content type
+    content_type, _ = mimetypes.guess_type(filename)
+    if content_type is None:
+        content_type = "application/octet-stream"
+
+    # Return image file
+    return FileResponse(
+        path=file_path,
+        media_type=content_type,
+        filename=filename
+    )
+
+
 @router.post(
     "/extract",
     response_class=FileResponse,
+    name="extract_images_from_upload",
     responses={
         200: {
             "description": "ZIP file containing all extracted images and page renders",
@@ -69,6 +236,7 @@ def _cleanup_paths(*paths: Path) -> None:
     """
 )
 async def extract_images(
+    request: Request,
     file: UploadFile = File(..., description="PDF file to extract images from (max 50MB)")
 ):
     """
@@ -116,33 +284,76 @@ async def extract_images(
             )
 
         # Extract images
-        output_subdir = f"{Path(file.filename).stem}_{uuid4().hex[:8]}"
-        output_dir, zip_path, render_count, total_files, extraction_time = (
-            extractor.extract_images_and_renders(
-                str(pdf_path),
-                output_subdir=output_subdir
+        if settings.enable_public_urls and session_manager:
+            # New flow: Create session, keep files
+            session_id = session_manager.create_session(file.filename)
+            session = session_manager.get_session(session_id)
+            base_url = get_base_url(request)
+
+            output_subdir = f"sessions/{session_id}"
+            output_dir, zip_path, render_count, total_files, extraction_time = (
+                extractor.extract_images_and_renders(
+                    str(pdf_path),
+                    output_subdir=output_subdir,
+                    session_id=session_id,
+                    base_url=base_url,
+                    enable_urls=True
+                )
             )
-        )
 
-        # Read ZIP into memory
-        with open(zip_path, 'rb') as f:
-            zip_content = f.read()
+            # Read ZIP into memory
+            with open(zip_path, 'rb') as f:
+                zip_content = f.read()
 
-        # Create temporary file for response
-        zip_fd, zip_temp_path = tempfile.mkstemp(suffix='.zip', prefix='response_')
-        os.close(zip_fd)
-        with open(zip_temp_path, 'wb') as f:
-            f.write(zip_content)
+            # Create temporary file for response
+            zip_fd, zip_temp_path = tempfile.mkstemp(suffix='.zip', prefix='response_')
+            os.close(zip_fd)
+            with open(zip_temp_path, 'wb') as f:
+                f.write(zip_content)
 
-        # Clean up extraction artifacts immediately
-        _cleanup_paths(output_dir, zip_path)
+            # Clean up only the ZIP file, keep extracted files for session
+            _cleanup_paths(zip_path)
 
-        return FileResponse(
-            path=zip_temp_path,
-            media_type="application/zip",
-            filename=f"{Path(file.filename).stem}_images.zip",
-            background=None
-        )
+            # Return with session headers
+            return FileResponse(
+                path=zip_temp_path,
+                media_type="application/zip",
+                filename=f"{Path(file.filename).stem}_images.zip",
+                headers={
+                    "X-Session-ID": session_id,
+                    "X-Session-Expires": session.expires_at.isoformat()
+                },
+                background=None
+            )
+        else:
+            # Original flow: Extract, send, delete everything
+            output_subdir = f"{Path(file.filename).stem}_{uuid4().hex[:8]}"
+            output_dir, zip_path, render_count, total_files, extraction_time = (
+                extractor.extract_images_and_renders(
+                    str(pdf_path),
+                    output_subdir=output_subdir
+                )
+            )
+
+            # Read ZIP into memory
+            with open(zip_path, 'rb') as f:
+                zip_content = f.read()
+
+            # Create temporary file for response
+            zip_fd, zip_temp_path = tempfile.mkstemp(suffix='.zip', prefix='response_')
+            os.close(zip_fd)
+            with open(zip_temp_path, 'wb') as f:
+                f.write(zip_content)
+
+            # Clean up extraction artifacts immediately
+            _cleanup_paths(output_dir, zip_path)
+
+            return FileResponse(
+                path=zip_temp_path,
+                media_type="application/zip",
+                filename=f"{Path(file.filename).stem}_images.zip",
+                background=None
+            )
 
     except HTTPException:
         raise
@@ -154,9 +365,11 @@ async def extract_images(
     finally:
         # Clean up uploaded PDF
         _cleanup_paths(pdf_path)
-        # Clean up any remaining extraction artifacts
-        if output_dir:
-            _cleanup_paths(output_dir)
+        # Clean up extraction artifacts only if not using sessions
+        if not settings.enable_public_urls:
+            if output_dir:
+                _cleanup_paths(output_dir)
+        # Always clean up the ZIP file itself (content is in temp file)
         if zip_path:
             _cleanup_paths(zip_path)
 
@@ -216,7 +429,8 @@ async def extract_images(
     """
 )
 async def extract_images_from_url(
-    request: URLExtractionRequest = Body(
+    request_obj: Request,
+    url_request: URLExtractionRequest = Body(
         ...,
         description="URL extraction request",
         openapi_examples={
@@ -260,7 +474,7 @@ async def extract_images_from_url(
     - 413: File too large (>50 MB)
     - 500: Extraction or server error
     """
-    pdf_url = request.url
+    pdf_url = url_request.url
 
     # Validate URL format
     try:
@@ -323,33 +537,76 @@ async def extract_images_from_url(
             )
 
         # Extract images
-        output_subdir = f"{Path(filename).stem}_{uuid4().hex[:8]}"
-        output_dir, zip_path, render_count, total_files, extraction_time = (
-            extractor.extract_images_and_renders(
-                str(pdf_path),
-                output_subdir=output_subdir
+        if settings.enable_public_urls and session_manager:
+            # New flow: Create session, keep files
+            session_id = session_manager.create_session(filename)
+            session = session_manager.get_session(session_id)
+            base_url = get_base_url(request_obj)
+
+            output_subdir = f"sessions/{session_id}"
+            output_dir, zip_path, render_count, total_files, extraction_time = (
+                extractor.extract_images_and_renders(
+                    str(pdf_path),
+                    output_subdir=output_subdir,
+                    session_id=session_id,
+                    base_url=base_url,
+                    enable_urls=True
+                )
             )
-        )
 
-        # Read ZIP into memory
-        with open(zip_path, 'rb') as f:
-            zip_content = f.read()
+            # Read ZIP into memory
+            with open(zip_path, 'rb') as f:
+                zip_content = f.read()
 
-        # Create temporary file for response
-        zip_fd, zip_temp_path = tempfile.mkstemp(suffix='.zip', prefix='response_')
-        os.close(zip_fd)
-        with open(zip_temp_path, 'wb') as f:
-            f.write(zip_content)
+            # Create temporary file for response
+            zip_fd, zip_temp_path = tempfile.mkstemp(suffix='.zip', prefix='response_')
+            os.close(zip_fd)
+            with open(zip_temp_path, 'wb') as f:
+                f.write(zip_content)
 
-        # Clean up extraction artifacts immediately
-        _cleanup_paths(output_dir, zip_path)
+            # Clean up only the ZIP file, keep extracted files for session
+            _cleanup_paths(zip_path)
 
-        return FileResponse(
-            path=zip_temp_path,
-            media_type="application/zip",
-            filename=f"{Path(filename).stem}_images.zip",
-            background=None
-        )
+            # Return with session headers
+            return FileResponse(
+                path=zip_temp_path,
+                media_type="application/zip",
+                filename=f"{Path(filename).stem}_images.zip",
+                headers={
+                    "X-Session-ID": session_id,
+                    "X-Session-Expires": session.expires_at.isoformat()
+                },
+                background=None
+            )
+        else:
+            # Original flow: Extract, send, delete everything
+            output_subdir = f"{Path(filename).stem}_{uuid4().hex[:8]}"
+            output_dir, zip_path, render_count, total_files, extraction_time = (
+                extractor.extract_images_and_renders(
+                    str(pdf_path),
+                    output_subdir=output_subdir
+                )
+            )
+
+            # Read ZIP into memory
+            with open(zip_path, 'rb') as f:
+                zip_content = f.read()
+
+            # Create temporary file for response
+            zip_fd, zip_temp_path = tempfile.mkstemp(suffix='.zip', prefix='response_')
+            os.close(zip_fd)
+            with open(zip_temp_path, 'wb') as f:
+                f.write(zip_content)
+
+            # Clean up extraction artifacts immediately
+            _cleanup_paths(output_dir, zip_path)
+
+            return FileResponse(
+                path=zip_temp_path,
+                media_type="application/zip",
+                filename=f"{Path(filename).stem}_images.zip",
+                background=None
+            )
 
     except requests.exceptions.Timeout:
         raise HTTPException(
@@ -371,9 +628,11 @@ async def extract_images_from_url(
     finally:
         # Clean up downloaded PDF
         _cleanup_paths(pdf_path)
-        # Clean up any remaining extraction artifacts
-        if output_dir:
-            _cleanup_paths(output_dir)
+        # Clean up extraction artifacts only if not using sessions
+        if not settings.enable_public_urls:
+            if output_dir:
+                _cleanup_paths(output_dir)
+        # Always clean up the ZIP file itself (content is in temp file)
         if zip_path:
             _cleanup_paths(zip_path)
 

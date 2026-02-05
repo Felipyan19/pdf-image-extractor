@@ -43,6 +43,8 @@ class ImageInfo(BaseModel):
     y1: Optional[float] = None  # Bottom Y coordinate
     bbox_width: Optional[float] = None  # Width in PDF points
     bbox_height: Optional[float] = None  # Height in PDF points
+    # Public URL to access the image (when public URLs feature is enabled)
+    url: Optional[str] = None
 
 
 class ExtractionResponse(BaseModel):

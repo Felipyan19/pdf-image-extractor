@@ -130,7 +130,10 @@ class PDFImageExtractor:
         self,
         pdf_path: str,
         output_subdir: str = None,
-        render_dpi: int = 200
+        render_dpi: int = 200,
+        session_id: str = None,
+        base_url: str = None,
+        enable_urls: bool = False
     ) -> Tuple[Path, Path, int, int, float]:
         """
         Extract embedded images and render each page to PNG, then package everything into a ZIP.
@@ -140,6 +143,9 @@ class PDFImageExtractor:
             pdf_path: Path to the PDF file
             output_subdir: Optional subdirectory name for outputs
             render_dpi: DPI for rendered page images
+            session_id: Optional session ID for URL generation
+            base_url: Optional base URL for constructing image URLs
+            enable_urls: Whether to generate public URLs for images
 
         Returns:
             Tuple of (output directory, zip path, render count, total files, extraction time)
@@ -213,6 +219,11 @@ class PDFImageExtractor:
                     # Get file size
                     file_size = img_name.stat().st_size
 
+                    # Generate public URL if enabled
+                    image_url = None
+                    if enable_urls and base_url and session_id:
+                        image_url = f"{base_url}/api/v1/images/{session_id}/{img_name.name}"
+
                     # Create ImageInfo with coordinates
                     if bbox:
                         img_info = ImageInfo(
@@ -228,7 +239,8 @@ class PDFImageExtractor:
                             x1=bbox.x1,
                             y1=bbox.y1,
                             bbox_width=bbox.width,
-                            bbox_height=bbox.height
+                            bbox_height=bbox.height,
+                            url=image_url
                         )
                     else:
                         # No bbox available
@@ -245,7 +257,8 @@ class PDFImageExtractor:
                             x1=None,
                             y1=None,
                             bbox_width=None,
-                            bbox_height=None
+                            bbox_height=None,
+                            url=image_url
                         )
 
                     images_metadata.append(img_info.model_dump())
@@ -263,6 +276,15 @@ class PDFImageExtractor:
             "note": "Coordinates are in PDF points (72 points = 1 inch). Origin (0,0) is at bottom-left of page.",
             "images": images_metadata
         }
+
+        # Add session info if public URLs are enabled
+        if enable_urls and session_id:
+            from datetime import datetime, timedelta
+            from app.config import settings
+            expires_at = datetime.now() + timedelta(hours=settings.session_ttl_hours)
+            metadata_content["session_id"] = session_id
+            metadata_content["base_url"] = base_url
+            metadata_content["expires_at"] = expires_at.isoformat()
 
         metadata_path = output_path / "metadata.json"
         with open(metadata_path, "w", encoding="utf-8") as f:

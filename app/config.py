@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     upload_dir: str = "uploads"
     output_dir: str = "outputs"
 
+    # Session Management (Public URLs for extracted images)
+    enable_public_urls: bool = True
+    session_ttl_hours: int = 1
+    session_cleanup_interval_minutes: int = 15
+    base_url: Optional[str] = None  # Auto-detect from request if None
+
     class Config:
         env_file = ".env"
         case_sensitive = False
