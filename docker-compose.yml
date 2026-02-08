@@ -21,6 +21,7 @@ services:
       - ALLOWED_EXTENSIONS=pdf
       - OUTPUT_FORMAT=png
       - IMAGE_QUALITY=95
+      - BASE_URL=https://n8n.149-130-164-187.sslip.io
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5050/api/v1/health')"]
