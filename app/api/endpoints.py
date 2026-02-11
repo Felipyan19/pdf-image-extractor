@@ -11,8 +11,10 @@ import re
 import mimetypes
 
 from app.config import settings
-from app.models.schemas import HealthResponse, ErrorResponse, URLExtractionRequest
+from app.models.schemas import HealthResponse, ErrorResponse, URLExtractionRequest, HtmlExtractionResponse, AssetUrl
 from app.services.image_extractor import PDFImageExtractor
+from app.services.layout_extractor import extract_layout
+from app.services.html_renderer import render_html, render_html_exact
 
 
 router = APIRouter()
@@ -635,6 +637,109 @@ async def extract_images_from_url(
         # Always clean up the ZIP file itself (content is in temp file)
         if zip_path:
             _cleanup_paths(zip_path)
+
+
+@router.post(
+    "/extract-html",
+    response_model=HtmlExtractionResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid file format (only PDF allowed)"},
+        413: {"model": ErrorResponse, "description": "File size exceeds maximum allowed limit"},
+        500: {"model": ErrorResponse, "description": "Server error during extraction"},
+    },
+    summary="📄 Extract PDF layout and generate editable HTML",
+    description="""
+    Upload a PDF and receive:
+    - **html**: Complete editable HTML page (images use public HTTPS URLs)
+    - **layout**: Full layout JSON with text spans, bboxes, fonts, colors — feed this to an AI to improve the HTML
+    - **assets**: List of extracted images with their public URLs
+    - **session_id / session_expires**: Session info (images available for TTL hours)
+
+    **Requires** `ENABLE_PUBLIC_URLS=true` in server configuration.
+    """,
+)
+async def extract_html(
+    request: Request,
+    file: UploadFile = File(..., description="PDF file (max 50 MB)"),
+):
+    """
+    Extract PDF layout and generate an editable HTML page.
+
+    The endpoint:
+    1. Validates and saves the uploaded PDF
+    2. Extracts text (with font/size/color/bbox), images, and hyperlinks
+    3. Builds a semantic HTML using section/heading/paragraph/image heuristics
+    4. Stores images in a timed session and returns public HTTPS URLs
+    5. Returns JSON with the HTML, raw layout, asset URLs, and session metadata
+
+    Use **layout** to feed an AI model that can refine the HTML further.
+    """
+    if not settings.enable_public_urls or session_manager is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint requires ENABLE_PUBLIC_URLS=true in server configuration",
+        )
+
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only PDF files are allowed",
+        )
+
+    pdf_fd, pdf_temp_path = tempfile.mkstemp(suffix=".pdf", prefix="upload_")
+    os.close(pdf_fd)
+    pdf_path = Path(pdf_temp_path)
+
+    try:
+        with open(pdf_path, "wb") as buf:
+            shutil.copyfileobj(file.file, buf)
+
+        file_size_mb = pdf_path.stat().st_size / (1024 * 1024)
+        if file_size_mb > settings.max_file_size:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File size ({file_size_mb:.2f}MB) exceeds maximum allowed size ({settings.max_file_size}MB)",
+            )
+
+        # Create session — images will live in outputs/sessions/{session_id}/
+        session_id = session_manager.create_session(file.filename)
+        session = session_manager.get_session(session_id)
+        out_dir = session.output_dir  # Path object
+
+        # Extract layout; images are saved directly in out_dir (flat)
+        layout = extract_layout(str(pdf_path), str(out_dir))
+
+        # Build per-image public URLs
+        base_url = get_base_url(request)
+        assets: list[AssetUrl] = []
+        for img_name in layout.get("image_files", []):
+            img_url = f"{base_url}/api/v1/images/{session_id}/{img_name}"
+            assets.append(AssetUrl(filename=img_name, url=img_url))
+
+        # Build assets_base_url used by the renderer so <img src="..."> is absolute
+        assets_base_url = f"{base_url}/api/v1/images/{session_id}/"
+
+        html = render_html(layout, assets_base_url=assets_base_url)
+        html_exact = render_html_exact(layout, assets_base_url=assets_base_url)
+
+        return HtmlExtractionResponse(
+            html=html,
+            html_exact=html_exact,
+            layout=layout,
+            assets=assets,
+            session_id=session_id,
+            session_expires=session.expires_at.isoformat(),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting HTML: {str(e)}",
+        )
+    finally:
+        _cleanup_paths(pdf_path)
 
 
 @router.get(

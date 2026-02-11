@@ -76,6 +76,22 @@ class HealthResponse(BaseModel):
         }
 
 
+class AssetUrl(BaseModel):
+    """A single extracted image with its public URL."""
+    filename: str = Field(..., description="Image filename (e.g. page001_img12.png)")
+    url: str = Field(..., description="Public HTTPS URL to access the image")
+
+
+class HtmlExtractionResponse(BaseModel):
+    """Response from the PDF → HTML extraction endpoint."""
+    html: str = Field(..., description="Editable semantic HTML (sections/headings/paragraphs). Easier to edit, not pixel-perfect.")
+    html_exact: str = Field(..., description="Pixel-perfect HTML using absolute positioning per bbox. Looks identical to the PDF.")
+    layout: dict = Field(..., description="Raw layout JSON extracted from the PDF (pages, blocks, text spans, bboxes)")
+    assets: List[AssetUrl] = Field(..., description="List of extracted images with their public URLs")
+    session_id: str = Field(..., description="Session ID (valid for TTL hours)")
+    session_expires: str = Field(..., description="ISO 8601 timestamp when the session and images expire")
+
+
 class ErrorResponse(BaseModel):
     """Error response model"""
     detail: str = Field(..., description="Error message describing what went wrong")
