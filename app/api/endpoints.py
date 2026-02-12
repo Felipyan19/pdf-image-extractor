@@ -9,6 +9,7 @@ import tempfile
 import os
 import re
 import mimetypes
+from typing import Optional
 
 from app.config import settings
 from app.models.schemas import HealthResponse, ErrorResponse, URLExtractionRequest, HtmlExtractionResponse, AssetUrl
@@ -660,19 +661,19 @@ async def extract_images_from_url(
 )
 async def extract_html(
     request: Request,
-    file: UploadFile = File(..., description="PDF file (max 50 MB)"),
+    file: Optional[UploadFile] = File(None, description="PDF file (max 50 MB). Omit if using pdf_url in JSON body."),
 ):
     """
     Extract PDF layout and generate an editable HTML page.
 
-    The endpoint:
-    1. Validates and saves the uploaded PDF
-    2. Extracts text (with font/size/color/bbox), images, and hyperlinks
-    3. Builds a semantic HTML using section/heading/paragraph/image heuristics
-    4. Stores images in a timed session and returns public HTTPS URLs
-    5. Returns JSON with the HTML, raw layout, asset URLs, and session metadata
+    Accepts either:
+    - **multipart/form-data** with `file` field (PDF upload)
+    - **application/json** with `pdf_url` field (server downloads the PDF)
 
-    Use **layout** to feed an AI model that can refine the HTML further.
+    JSON body example:
+    ```json
+    { "pdf_url": "https://example.com/document.pdf" }
+    ```
     """
     if not settings.enable_public_urls or session_manager is None:
         raise HTTPException(
@@ -680,19 +681,56 @@ async def extract_html(
             detail="This endpoint requires ENABLE_PUBLIC_URLS=true in server configuration",
         )
 
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only PDF files are allowed",
-        )
-
     pdf_fd, pdf_temp_path = tempfile.mkstemp(suffix=".pdf", prefix="upload_")
     os.close(pdf_fd)
     pdf_path = Path(pdf_temp_path)
+    filename = "document.pdf"
 
     try:
-        with open(pdf_path, "wb") as buf:
-            shutil.copyfileobj(file.file, buf)
+        if file is not None:
+            # --- Mode A: file upload ---
+            filename = file.filename or "document.pdf"
+            if not filename.lower().endswith(".pdf"):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PDF files are allowed")
+            with open(pdf_path, "wb") as buf:
+                shutil.copyfileobj(file.file, buf)
+        else:
+            # --- Mode B: JSON body with pdf_url ---
+            try:
+                body = await request.json()
+            except Exception:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Provide a PDF file (multipart) or a JSON body with pdf_url",
+                )
+            pdf_url = body.get("pdf_url") or body.get("url")
+            if not pdf_url:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="JSON body must contain 'pdf_url' field",
+                )
+            try:
+                parsed = urlparse(pdf_url)
+                if not parsed.scheme or not parsed.netloc:
+                    raise ValueError("missing scheme or host")
+            except Exception:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid pdf_url")
+
+            url_filename = Path(unquote(parsed.path)).name
+            if url_filename:
+                filename = url_filename if url_filename.lower().endswith(".pdf") else url_filename + ".pdf"
+
+            try:
+                resp = requests.get(pdf_url, stream=True, timeout=120)
+                resp.raise_for_status()
+            except requests.exceptions.Timeout:
+                raise HTTPException(status_code=status.HTTP_408_REQUEST_TIMEOUT, detail="Timeout downloading PDF")
+            except requests.exceptions.RequestException as e:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to download PDF: {e}")
+
+            with open(pdf_path, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    f.write(chunk)
 
         file_size_mb = pdf_path.stat().st_size / (1024 * 1024)
         if file_size_mb > settings.max_file_size:
@@ -701,22 +739,18 @@ async def extract_html(
                 detail=f"File size ({file_size_mb:.2f}MB) exceeds maximum allowed size ({settings.max_file_size}MB)",
             )
 
-        # Create session — images will live in outputs/sessions/{session_id}/
-        session_id = session_manager.create_session(file.filename)
+        session_id = session_manager.create_session(filename)
         session = session_manager.get_session(session_id)
-        out_dir = session.output_dir  # Path object
+        out_dir = session.output_dir
 
-        # Extract layout; images are saved directly in out_dir (flat)
         layout = extract_layout(str(pdf_path), str(out_dir))
 
-        # Build per-image public URLs
         base_url = get_base_url(request)
         assets: list[AssetUrl] = []
         for img_name in layout.get("image_files", []):
             img_url = f"{base_url}/api/v1/images/{session_id}/{img_name}"
             assets.append(AssetUrl(filename=img_name, url=img_url))
 
-        # Build assets_base_url used by the renderer so <img src="..."> is absolute
         assets_base_url = f"{base_url}/api/v1/images/{session_id}/"
 
         html = render_html(layout, assets_base_url=assets_base_url)
