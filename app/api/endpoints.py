@@ -793,7 +793,7 @@ async def extract_html(
     **Designed for the n8n slot-based pipeline.** Does NOT generate HTML.
 
     **Returns extractor_output JSON with:**
-    - `pages[].elements[]`: text (with style), image (with URL + phash), rect (with colors)
+    - `pages[].elements[]`: text (with `normalized_text` + style), image (with URL + phash + xref), rect (with colors)
     - `pages[].lines[]` / `pages[].blocks[]`: groupings for context
     - `pages[].render_png`: full-page render URL for fallback
 

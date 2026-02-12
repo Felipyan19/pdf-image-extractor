@@ -6,8 +6,8 @@ suitable for deterministic slot matching in n8n. Does NOT generate HTML.
 """
 
 import io
-import hashlib
-import uuid
+import re
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -67,6 +67,16 @@ def _infer_font_style(font_name: str, flags: int) -> str:
     return "normal"
 
 
+def _normalize_text_for_match(text: str) -> str:
+    """Lowercase, remove accents, collapse whitespace for robust matching."""
+    if not text:
+        return ""
+    normalized = unicodedata.normalize("NFKD", text)
+    without_accents = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    lowered = without_accents.lower()
+    return re.sub(r"\s+", " ", lowered).strip()
+
+
 # ── Text elements ──────────────────────────────────────────────────────────────
 
 def _extract_text_elements(page: "fitz.Page", page_idx: int) -> List[Dict]:
@@ -109,6 +119,7 @@ def _extract_text_elements(page: "fitz.Page", page_idx: int) -> List[Dict]:
                 "type": "text",
                 "text": line_text,
                 "raw_text": line_text,
+                "normalized_text": _normalize_text_for_match(line_text),
                 "bbox": bbox,
                 "style": {
                     "font_family": font_name,
@@ -144,8 +155,6 @@ def _extract_image_elements(
         rects = page.get_image_rects(xref)
         if not rects:
             continue
-        rect = rects[0]
-
         try:
             base_image = doc.extract_image(xref)
             img_bytes = base_image["image"]
@@ -171,26 +180,29 @@ def _extract_image_elements(
                 except Exception:
                     pass
             if not width_px:
-                width_px = int(rect.width)
-                height_px = int(rect.height)
+                width_px = int(rects[0].width)
+                height_px = int(rects[0].height)
 
             src_url = f"{base_url}/api/v1/images/{session_id}/{img_filename}"
 
-            bbox = {
-                "x0": round(rect.x0, 2), "y0": round(rect.y0, 2),
-                "x1": round(rect.x1, 2), "y1": round(rect.y1, 2),
-            }
+            for rect_idx, rect in enumerate(rects):
+                bbox = {
+                    "x0": round(rect.x0, 2), "y0": round(rect.y0, 2),
+                    "x1": round(rect.x1, 2), "y1": round(rect.y1, 2),
+                }
 
-            elements.append({
-                "id": f"i_{page_idx}_{img_idx:04d}",
-                "type": "image",
-                "src": src_url,
-                "bbox": bbox,
-                "width_px": width_px,
-                "height_px": height_px,
-                "phash": phash,
-                "order": img_idx,  # images are low order (painted first as backgrounds)
-            })
+                elements.append({
+                    "id": f"i_{page_idx}_{img_idx:04d}_{rect_idx:02d}",
+                    "type": "image",
+                    "src": src_url,
+                    "xref": xref,
+                    "bbox": bbox,
+                    "width_px": width_px,
+                    "height_px": height_px,
+                    "aspect_ratio": round(width_px / max(height_px, 1), 4),
+                    "phash": phash,
+                    "order": img_idx * 10 + rect_idx,  # keep deterministic order for repeated rects
+                })
 
         except Exception:
             continue
@@ -259,6 +271,7 @@ def _extract_lines_and_blocks(page: "fitz.Page") -> Tuple[List, List]:
             lb = line["bbox"]
             entry = {
                 "text": line_text,
+                "normalized_text": _normalize_text_for_match(line_text),
                 "bbox": {
                     "x0": round(lb[0], 2), "y0": round(lb[1], 2),
                     "x1": round(lb[2], 2), "y1": round(lb[3], 2),
@@ -271,6 +284,7 @@ def _extract_lines_and_blocks(page: "fitz.Page") -> Tuple[List, List]:
             bb = block["bbox"]
             blocks_out.append({
                 "text": " ".join(l["text"] for l in block_lines),
+                "normalized_text": _normalize_text_for_match(" ".join(l["text"] for l in block_lines)),
                 "bbox": {
                     "x0": round(bb[0], 2), "y0": round(bb[1], 2),
                     "x1": round(bb[2], 2), "y1": round(bb[3], 2),

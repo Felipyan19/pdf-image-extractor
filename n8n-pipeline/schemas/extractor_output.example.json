@@ -1,0 +1,133 @@
+{
+  "doc_id": "a1b2c3d4",
+  "source_filename": "newsletter_abril.pdf",
+  "extracted_at": "2026-02-12T10:00:00Z",
+  "pages": [
+    {
+      "page_index": 0,
+      "width_pt": 612.0,
+      "height_pt": 792.0,
+      "rotation": 0,
+      "elements": [
+        {
+          "id": "r_0_0000",
+          "type": "rect",
+          "bbox": { "x0": 0.0, "y0": 0.0, "x1": 612.0, "y1": 160.0 },
+          "fill_color": "#00175a",
+          "stroke_color": null,
+          "stroke_width": 0,
+          "order": 0
+        },
+        {
+          "id": "i_0_0000_00",
+          "type": "image",
+          "src": "https://extractor.example.com/api/v1/images/a1b2c3d4/page001_img01.jpg",
+          "xref": 305,
+          "bbox": { "x0": 0.0, "y0": 0.0, "x1": 612.0, "y1": 160.0 },
+          "width_px": 1224,
+          "height_px": 320,
+          "aspect_ratio": 3.825,
+          "phash": "f8c4a2e1b3d5f7a9",
+          "order": 1
+        },
+        {
+          "id": "t_0_0001",
+          "type": "text",
+          "text": "Beneficios exclusivos para vos",
+          "raw_text": "Beneficios exclusivos para vos",
+          "normalized_text": "beneficios exclusivos para vos",
+          "bbox": { "x0": 40.0, "y0": 60.0, "x1": 420.0, "y1": 100.0 },
+          "style": {
+            "font_family": "BentonSans500",
+            "font_size": 33.0,
+            "font_weight": "bold",
+            "font_style": "normal",
+            "color": "#ffffff"
+          },
+          "order": 2
+        },
+        {
+          "id": "t_0_0002",
+          "type": "text",
+          "text": "Conocé todo lo que tenemos para ofrecerte",
+          "raw_text": "Conocé todo lo que tenemos para ofrecerte",
+          "normalized_text": "conoce todo lo que tenemos para ofrecerte",
+          "bbox": { "x0": 40.0, "y0": 105.0, "x1": 400.0, "y1": 135.0 },
+          "style": {
+            "font_family": "BentonSans400",
+            "font_size": 22.0,
+            "font_weight": "normal",
+            "font_style": "normal",
+            "color": "#ffffff"
+          },
+          "order": 3
+        },
+        {
+          "id": "t_0_0003",
+          "type": "text",
+          "text": "VER BENEFICIOS",
+          "raw_text": "VER BENEFICIOS",
+          "bbox": { "x0": 190.0, "y0": 330.0, "x1": 420.0, "y1": 360.0 },
+          "style": {
+            "font_family": "HelveticaNeue",
+            "font_size": 15.0,
+            "font_weight": "bold",
+            "font_style": "normal",
+            "color": "#006fcf"
+          },
+          "order": 10
+        },
+        {
+          "id": "t_0_0004",
+          "type": "text",
+          "text": "https://amex.com/beneficios-exclusivos",
+          "raw_text": "https://amex.com/beneficios-exclusivos",
+          "bbox": { "x0": 190.0, "y0": 330.0, "x1": 420.0, "y1": 360.0 },
+          "style": {
+            "font_family": "HelveticaNeue",
+            "font_size": 8.0,
+            "font_weight": "normal",
+            "font_style": "normal",
+            "color": "#006fcf"
+          },
+          "order": 11
+        },
+        {
+          "id": "t_0_0099",
+          "type": "text",
+          "text": "© 2026 American Express. Todos los derechos reservados. Para cancelar suscripción hacé click aquí.",
+          "raw_text": "© 2026 American Express. Todos los derechos reservados. Para cancelar suscripción hacé click aquí.",
+          "bbox": { "x0": 20.0, "y0": 740.0, "x1": 592.0, "y1": 785.0 },
+          "style": {
+            "font_family": "HelveticaNeue",
+            "font_size": 9.0,
+            "font_weight": "normal",
+            "font_style": "normal",
+            "color": "#3d3d3d"
+          },
+          "order": 99
+        }
+      ],
+      "lines": [
+        {
+          "text": "Beneficios exclusivos para vos",
+          "normalized_text": "beneficios exclusivos para vos",
+          "bbox": { "x0": 40.0, "y0": 60.0, "x1": 420.0, "y1": 100.0 }
+        },
+        {
+          "text": "Conocé todo lo que tenemos para ofrecerte",
+          "normalized_text": "conoce todo lo que tenemos para ofrecerte",
+          "bbox": { "x0": 40.0, "y0": 105.0, "x1": 400.0, "y1": 135.0 }
+        }
+      ],
+      "blocks": [
+        {
+          "text": "Beneficios exclusivos para vos Conocé todo lo que tenemos para ofrecerte",
+          "normalized_text": "beneficios exclusivos para vos conoce todo lo que tenemos para ofrecerte",
+          "bbox": { "x0": 40.0, "y0": 60.0, "x1": 420.0, "y1": 135.0 }
+        }
+      ],
+      "render_png": "https://extractor.example.com/api/v1/images/a1b2c3d4/page001_render.png"
+    }
+  ]
+}
