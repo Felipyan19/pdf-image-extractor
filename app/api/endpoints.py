@@ -16,6 +16,7 @@ from app.models.schemas import HealthResponse, ErrorResponse, URLExtractionReque
 from app.services.image_extractor import PDFImageExtractor
 from app.services.layout_extractor import extract_layout
 from app.services.html_renderer import render_html, render_html_exact
+from app.services.structured_extractor import extract_structured
 
 
 router = APIRouter()
@@ -771,6 +772,121 @@ async def extract_html(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error extracting HTML: {str(e)}",
+        )
+    finally:
+        _cleanup_paths(pdf_path)
+
+
+@router.post(
+    "/extract-structured",
+    response_model=dict,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid file format (only PDF allowed)"},
+        413: {"model": ErrorResponse, "description": "File size exceeds maximum allowed limit"},
+        500: {"model": ErrorResponse, "description": "Server error during extraction"},
+    },
+    summary="🔬 Extract structured element data from PDF (for n8n slot-based pipeline)",
+    description="""
+    Extracts all elements from a digital PDF as structured JSON — text, images, and shapes
+    each with their bounding boxes, styles, and identifiers.
+
+    **Designed for the n8n slot-based pipeline.** Does NOT generate HTML.
+
+    **Returns extractor_output JSON with:**
+    - `pages[].elements[]`: text (with style), image (with URL + phash), rect (with colors)
+    - `pages[].lines[]` / `pages[].blocks[]`: groupings for context
+    - `pages[].render_png`: full-page render URL for fallback
+
+    Accepts either:
+    - **multipart/form-data** with `file` field (PDF upload)
+    - **application/json** with `pdf_url` field (server downloads the PDF)
+    """,
+)
+async def extract_structured_endpoint(
+    request: Request,
+    file: Optional[UploadFile] = File(None, description="PDF file (max 50 MB)"),
+):
+    """Extract structured element data for the n8n slot-based template pipeline."""
+    if not settings.enable_public_urls or session_manager is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint requires ENABLE_PUBLIC_URLS=true",
+        )
+
+    pdf_fd, pdf_temp_path = tempfile.mkstemp(suffix=".pdf", prefix="structured_")
+    os.close(pdf_fd)
+    pdf_path = Path(pdf_temp_path)
+    filename = "document.pdf"
+
+    try:
+        if file is not None:
+            filename = file.filename or "document.pdf"
+            if not filename.lower().endswith(".pdf"):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PDF files are allowed")
+            with open(pdf_path, "wb") as buf:
+                shutil.copyfileobj(file.file, buf)
+        else:
+            try:
+                body = await request.json()
+            except Exception:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Provide a PDF file (multipart) or a JSON body with pdf_url",
+                )
+            pdf_url = body.get("pdf_url") or body.get("url")
+            if not pdf_url:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="JSON body must contain 'pdf_url'")
+
+            from urllib.parse import urlparse, unquote as _unquote
+            parsed = urlparse(pdf_url)
+            url_filename = Path(_unquote(parsed.path)).name
+            if url_filename:
+                filename = url_filename if url_filename.lower().endswith(".pdf") else url_filename + ".pdf"
+
+            try:
+                resp = requests.get(pdf_url, stream=True, timeout=120)
+                resp.raise_for_status()
+            except requests.exceptions.Timeout:
+                raise HTTPException(status_code=status.HTTP_408_REQUEST_TIMEOUT, detail="Timeout downloading PDF")
+            except requests.exceptions.RequestException as e:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to download PDF: {e}")
+
+            with open(pdf_path, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+        file_size_mb = pdf_path.stat().st_size / (1024 * 1024)
+        if file_size_mb > settings.max_file_size:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File size ({file_size_mb:.2f}MB) exceeds maximum allowed size ({settings.max_file_size}MB)",
+            )
+
+        session_id = session_manager.create_session(filename)
+        session = session_manager.get_session(session_id)
+        out_dir = str(session.output_dir)
+        base_url = get_base_url(request)
+
+        structured = extract_structured(
+            pdf_path=str(pdf_path),
+            out_dir=out_dir,
+            session_id=session_id,
+            base_url=base_url,
+            source_filename=filename,
+        )
+
+        # Add session metadata to the response for n8n to use
+        structured["session_id"] = session_id
+        structured["session_expires"] = session.expires_at.isoformat()
+
+        return structured
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting structured data: {str(e)}",
         )
     finally:
         _cleanup_paths(pdf_path)
