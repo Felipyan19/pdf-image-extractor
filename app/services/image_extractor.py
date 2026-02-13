@@ -126,6 +126,43 @@ class PDFImageExtractor:
         extraction_time = time.time() - start_time
         return images_info, extraction_time
 
+    def _build_ocr_render(
+        self,
+        source_render_path: Path,
+        output_path: Path,
+        page_no: int,
+        max_dimension_px: int = 7600,
+    ) -> Dict:
+        """
+        Build an OCR-friendly render constrained below provider dimension limits.
+        """
+        with Image.open(source_render_path) as img:
+            width, height = img.size
+            if width <= max_dimension_px and height <= max_dimension_px:
+                return {
+                    "path": source_render_path,
+                    "filename": source_render_path.name,
+                    "width": width,
+                    "height": height,
+                    "format": "png",
+                    "size_bytes": source_render_path.stat().st_size,
+                    "resized": False,
+                }
+
+            ocr_render_name = output_path / f"page{page_no:03d}_render_ocr.png"
+            resized = img.copy()
+            resized.thumbnail((max_dimension_px, max_dimension_px), Image.Resampling.LANCZOS)
+            resized.save(ocr_render_name, format="PNG", optimize=True)
+            return {
+                "path": ocr_render_name,
+                "filename": ocr_render_name.name,
+                "width": resized.width,
+                "height": resized.height,
+                "format": "png",
+                "size_bytes": ocr_render_name.stat().st_size,
+                "resized": True,
+            }
+
     def extract_images_and_renders(
         self,
         pdf_path: str,
@@ -182,6 +219,19 @@ class PDFImageExtractor:
                 if enable_urls and base_url and session_id:
                     render_url = f"{base_url}/api/v1/images/{session_id}/{render_name.name}"
 
+                ocr_render = self._build_ocr_render(
+                    source_render_path=render_name,
+                    output_path=output_path,
+                    page_no=page_no,
+                    max_dimension_px=7600,
+                )
+                if ocr_render["path"] != render_name:
+                    extracted_files.append(ocr_render["path"])
+
+                ocr_render_url = None
+                if enable_urls and base_url and session_id:
+                    ocr_render_url = f"{base_url}/api/v1/images/{session_id}/{ocr_render['filename']}"
+
                 renders_metadata.append({
                     "filename": render_name.name,
                     "page_number": page_no,
@@ -190,6 +240,12 @@ class PDFImageExtractor:
                     "format": "png",
                     "size_bytes": render_name.stat().st_size,
                     "url": render_url,
+                    "ocr_filename": ocr_render["filename"],
+                    "ocr_width": ocr_render["width"],
+                    "ocr_height": ocr_render["height"],
+                    "ocr_size_bytes": ocr_render["size_bytes"],
+                    "ocr_url": ocr_render_url if ocr_render_url else render_url,
+                    "ocr_resized": bool(ocr_render["resized"]),
                 })
 
                 # Extract embedded images with coordinates
@@ -291,6 +347,7 @@ class PDFImageExtractor:
             "render_dpi": render_dpi,
             "note": "Coordinates are in PDF points (72 points = 1 inch). Origin (0,0) is at bottom-left of page.",
             "render_png_url": (renders_metadata[0].get("url") if renders_metadata else None),
+            "render_ocr_png_url": (renders_metadata[0].get("ocr_url") if renders_metadata else None),
             "renders": renders_metadata,
             "images": images_metadata
         }
