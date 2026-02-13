@@ -164,6 +164,7 @@ class PDFImageExtractor:
         extracted_files = []
         render_count = 0
         images_metadata = []
+        renders_metadata = []
 
         try:
             for page_index in range(len(pdf_document)):
@@ -176,6 +177,20 @@ class PDFImageExtractor:
                 pix.save(str(render_name))
                 extracted_files.append(render_name)
                 render_count += 1
+
+                render_url = None
+                if enable_urls and base_url and session_id:
+                    render_url = f"{base_url}/api/v1/images/{session_id}/{render_name.name}"
+
+                renders_metadata.append({
+                    "filename": render_name.name,
+                    "page_number": page_no,
+                    "width": pix.width,
+                    "height": pix.height,
+                    "format": "png",
+                    "size_bytes": render_name.stat().st_size,
+                    "url": render_url,
+                })
 
                 # Extract embedded images with coordinates
                 image_list = page.get_images(full=True)
@@ -270,10 +285,13 @@ class PDFImageExtractor:
         metadata_content = {
             "pdf_file": Path(pdf_path).name,
             "total_pages": render_count,
+            "total_renders": render_count,
             "total_images": len(images_metadata),
             "extraction_time": time.time() - start_time,
             "render_dpi": render_dpi,
             "note": "Coordinates are in PDF points (72 points = 1 inch). Origin (0,0) is at bottom-left of page.",
+            "render_png_url": (renders_metadata[0].get("url") if renders_metadata else None),
+            "renders": renders_metadata,
             "images": images_metadata
         }
 
