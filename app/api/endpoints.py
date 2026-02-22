@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, status, Body, Path as PathParam, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
 import shutil
 import requests
@@ -8,6 +8,7 @@ from uuid import uuid4
 import tempfile
 import os
 import re
+import json
 import mimetypes
 from typing import Optional
 
@@ -198,6 +199,48 @@ async def get_session_image(
         media_type=content_type,
         filename=filename
     )
+
+
+@router.get(
+    "/sessions/{session_id}/metadata",
+    response_class=JSONResponse,
+    responses={
+        200: {"description": "Session metadata (images, renders, URLs)"},
+        400: {"model": ErrorResponse, "description": "Invalid session ID"},
+        404: {"model": ErrorResponse, "description": "Session or metadata not found"},
+        410: {"model": ErrorResponse, "description": "Session has expired"},
+    },
+    summary="📋 Get session metadata",
+    description="Returns metadata.json for a session (list of images and renders with URLs). Used by pdf-to-html-service to rewrite HTML image sources.",
+)
+async def get_session_metadata(
+    session_id: str = PathParam(..., description="Session ID from extraction (32-char hex string)"),
+):
+    """Return metadata.json content for a session so other services can use image URLs."""
+    if not settings.enable_public_urls or session_manager is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Public URLs feature is not enabled",
+        )
+    if not validate_session_id(session_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid session ID format")
+    session = session_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Session not found: {session_id}")
+    if session_manager.is_session_expired(session_id):
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail=f"Session has expired at {session.expires_at.isoformat()}",
+        )
+    metadata_path = session.output_dir / "metadata.json"
+    if not metadata_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Metadata not found for this session (extract with /extract or /extract-from-url first)",
+        )
+    with open(metadata_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return JSONResponse(content=data)
 
 
 @router.post(
