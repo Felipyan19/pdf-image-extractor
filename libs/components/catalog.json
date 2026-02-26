@@ -1,0 +1,658 @@
+{
+  "version": "1.0",
+  "description": "Librería de componentes HTML para emails AMEX Argentina. Cada entrada describe la estructura visual del componente para que un sistema OCR/LLM pueda seleccionar el bloque correcto.",
+  "total_components": 33,
+  "components": [
+
+    {
+      "id": "preheader-v42",
+      "type": "preheader",
+      "file": "preheader/preheader-v42.html",
+      "name": "Preheader v4.2",
+      "version_ref": "PH01-v4.2",
+      "visual": {
+        "layout": "single-row",
+        "width": 620,
+        "bg_color": "#E0E0E0",
+        "height_approx": "36px",
+        "columns": {
+          "left": ["text-small: PUBLICIDAD"],
+          "right": ["text-small: ¿No podés ver el mail? + link subrayado"]
+        }
+      },
+      "use_when": "Header superior de email sobre fondo gris claro (#E0E0E0). Versión moderna (v4.2)."
+    },
+
+    {
+      "id": "preheader-v40",
+      "type": "preheader",
+      "file": "preheader/preheader-v40.html",
+      "name": "Preheader v4.0",
+      "version_ref": "PH01-v4.0",
+      "visual": {
+        "layout": "single-row",
+        "width": 620,
+        "bg_color": "#d9d9d6",
+        "height_approx": "36px",
+        "columns": {
+          "left": ["text-small: PUBLICIDAD"],
+          "right": ["text-small: ¿No podés ver el mail? + link subrayado"]
+        }
+      },
+      "use_when": "Header superior de email sobre fondo gris beige (#d9d9d6). Versión clásica (v4.0)."
+    },
+
+    {
+      "id": "brand-panel-consumer",
+      "type": "brand-panel",
+      "file": "brand-panel/brand-panel-consumer.html",
+      "name": "Brand Panel — Consumer Default",
+      "version_ref": "Consumer Default-v4.2",
+      "visual": {
+        "layout": "two-row",
+        "width": 620,
+        "bg_color": "#FFFFFF",
+        "row_1": {
+          "left": ["logo-amex-60px", "tagline-image-150px (mobile-hidden)"],
+          "center": ["text: cuenta termina en, miembro desde"],
+          "right": ["card-image-80px"]
+        },
+        "row_2": {
+          "left": ["text: Hola {FULLNAME}"],
+          "right": ["button-outline: Mi cuenta"]
+        },
+        "border": "bottom: 1px solid #E0E0E0 entre filas"
+      },
+      "use_when": "Panel superior de identificación del cliente para newsletters de comercios/merchant (sin tarjeta específica)."
+    },
+
+    {
+      "id": "brand-panel-gold",
+      "type": "brand-panel",
+      "file": "brand-panel/brand-panel-gold.html",
+      "name": "Brand Panel — Gold Card",
+      "version_ref": "BP02-v4.0",
+      "visual": {
+        "layout": "two-row",
+        "width": 620,
+        "bg_color_header": "#d9d9d6",
+        "row_1": {
+          "left": ["logo-amex-80px", "tagline-image (mobile-hidden)"],
+          "center": ["text: cuenta termina en, miembro desde"],
+          "right": ["gold-card-image-80px"]
+        },
+        "row_2": {
+          "left": ["text: Hola {FNAME}"],
+          "right": ["button-roundrect-VML: Mi cuenta"]
+        }
+      },
+      "use_when": "Panel de identificación para emails de la Gold Credit Card (fondo beige #d9d9d6)."
+    },
+
+    {
+      "id": "brand-panel-platinum",
+      "type": "brand-panel",
+      "file": "brand-panel/brand-panel-platinum.html",
+      "name": "Brand Panel — Platinum Card",
+      "version_ref": "Consumer Default-v4.2",
+      "visual": {
+        "layout": "two-row",
+        "width": 620,
+        "bg_color": "#FFFFFF",
+        "row_1": {
+          "left": ["logo-amex-60px", "tagline-image-150px (mobile-hidden)"],
+          "center": ["text: cuenta termina en, miembro desde"],
+          "right": ["platinum-card-image-80px"]
+        },
+        "row_2": {
+          "left": ["text: Hola {FULLNAME}"],
+          "right": ["button-outline: Mi cuenta"]
+        }
+      },
+      "use_when": "Panel de identificación para emails de la Platinum Card (fondo blanco, tarjeta Platinum)."
+    },
+
+    {
+      "id": "hero-banner-overlay-v42",
+      "type": "hero-banner",
+      "file": "hero-banner/hero-banner-overlay-v42.html",
+      "name": "Hero Banner Overlay v4.2",
+      "version_ref": "HB03-v4.2",
+      "visual": {
+        "layout": "full-width-background-image",
+        "width": 620,
+        "height_approx": "320px",
+        "bg": "imagen full-width con texto superpuesto centrado",
+        "overlay_content": ["título-grande-navy", "subtítulo-fecha-uppercase"],
+        "mobile": "imagen mobile independiente stacked"
+      },
+      "use_when": "Hero principal con imagen de fondo y título superpuesto, versión moderna centrada."
+    },
+
+    {
+      "id": "hero-banner-overlay-v40",
+      "type": "hero-banner",
+      "file": "hero-banner/hero-banner-overlay-v40.html",
+      "name": "Hero Banner Overlay v4.0",
+      "version_ref": "HB03-v4.0",
+      "visual": {
+        "layout": "three-column-background-image",
+        "width": 620,
+        "height_approx": "320px",
+        "bg": "imagen de fondo, texto en columna izquierda con caja semitransparente",
+        "columns": {
+          "left-spacer": "43px vacío",
+          "center": ["text-box: título-grande-navy en fondo opcional"],
+          "right": ["imagen-mobile (visible solo en mobile)"]
+        }
+      },
+      "use_when": "Hero con imagen de fondo y texto alineado a izquierda, versión clásica (v4.0)."
+    },
+
+    {
+      "id": "hero-full-width-text",
+      "type": "hero-full-width",
+      "file": "hero-full-width/hero-full-width-text.html",
+      "name": "Hero Full Width — Solo Texto",
+      "version_ref": "HB15-v4.0",
+      "visual": {
+        "layout": "single-column-color-bg",
+        "width": 620,
+        "bg_color": "#006fca",
+        "content": ["texto-blanco-grande-bold centrado", "texto-blanco-normal centrado con palabras en bold"],
+        "no_image": true
+      },
+      "use_when": "Banner de texto importante sin imagen, fondo azul sólido. Ideal para anunciar novedades (ej: extensión de límite de crédito)."
+    },
+
+    {
+      "id": "hero-full-width-image",
+      "type": "hero-full-width",
+      "file": "hero-full-width/hero-full-width-image.html",
+      "name": "Hero Full Width — Imagen + Barra",
+      "version_ref": "HB15-v4.2",
+      "visual": {
+        "layout": "stacked-image-then-text-bars",
+        "width": 620,
+        "rows": [
+          {"row": 1, "content": "imagen fotográfica full-width 620px"},
+          {"row": 2, "content": "barra de color oscuro (#5d6165) con título blanco grande centrado"},
+          {"row": 3, "content": "fondo blanco, texto descriptivo centrado con palabras en negrita navy"}
+        ],
+        "mobile": "imagen mobile alternativa"
+      },
+      "use_when": "Hero con imagen de destino/producto + título en barra de color + descripción. Ideal para emails de travel."
+    },
+
+    {
+      "id": "intro-text",
+      "type": "intro-text",
+      "file": "intro-text/intro-text.html",
+      "name": "Intro Text",
+      "version_ref": "TM04-v4.2",
+      "visual": {
+        "layout": "single-column-white",
+        "width": 620,
+        "bg_color": "#FFFFFF",
+        "padding": "40px 20px",
+        "content": ["párrafo centrado: texto normal intercalado con palabras en bold color azul #006fcf"]
+      },
+      "use_when": "Párrafo introductorio centrado que resume los beneficios del período. Texto mixto (normal + bold azul)."
+    },
+
+    {
+      "id": "section-compras",
+      "type": "section-compras",
+      "file": "section-compras/section-compras.html",
+      "name": "Sección Compras",
+      "version_ref": "TM01-v4.2 + HB08-v4.2",
+      "visual": {
+        "layout": "section-header-then-50-50",
+        "width": 620,
+        "header": {
+          "bg_color": "#006FCF",
+          "content": ["ícono-categoria 51px", "título COMPRAS blanco uppercase"]
+        },
+        "body": {
+          "layout": "two-column-50-50",
+          "divider": "1px solid #C8C9C7 vertical",
+          "left": ["título-bold", "subtítulo-fecha", "imagen-oferta", "texto-azul", "texto-navy", "link-subrayado", "texto-legal"],
+          "right": ["logo-marca", "texto-azul bold", "imagen-oferta", "texto-descripción", "texto-azul", "link-subrayado"]
+        }
+      },
+      "use_when": "Sección completa de COMPRAS con header azul + dos promociones en columnas. Ej: Shopping Days + PedidosYa."
+    },
+
+    {
+      "id": "section-gastronomia",
+      "type": "section-gastronomia",
+      "file": "section-gastronomia/section-gastronomia.html",
+      "name": "Sección Gastronomía",
+      "version_ref": "TM01-v4.2 + HB08-v4.2",
+      "visual": {
+        "layout": "section-header-then-50-50",
+        "width": 620,
+        "header": {
+          "bg_color": "#006FCF",
+          "content": ["ícono-categoria 51px", "título GASTRONOMÍA blanco uppercase"]
+        },
+        "body": {
+          "layout": "two-column-50-50",
+          "divider": "1px solid #C8C9C7 vertical",
+          "left": ["imagen-oferta-pct", "texto-azul", "texto-descripción", "link-subrayado-navy", "texto-legal"],
+          "right": ["imagen-oferta-pct", "texto-azul", "texto-descripción", "logos-hoteles en fila", "link-subrayado-navy", "texto-legal"]
+        }
+      },
+      "use_when": "Sección completa de GASTRONOMÍA con header azul + dos promociones en columnas. Ej: restaurantes + hoteles NH."
+    },
+
+    {
+      "id": "section-hoteles",
+      "type": "section-hoteles",
+      "file": "section-hoteles/section-hoteles.html",
+      "name": "Sección Hoteles",
+      "version_ref": "TM01-v4.2 + mixed",
+      "visual": {
+        "layout": "section-header-then-content",
+        "width": 620,
+        "header": {
+          "bg_color": "#006FCF",
+          "content": ["ícono-categoria 51px", "título HOTELES blanco uppercase"]
+        },
+        "body": {
+          "layout": "centrado + two-column-50-50",
+          "rows": [
+            "texto-porcentaje-descuento grande centrado",
+            "two-column: izq (4x3 en hoteles) | der (30% OFF en hoteles)"
+          ]
+        }
+      },
+      "use_when": "Sección completa de HOTELES con header azul + beneficio central + dos sub-ofertas en columnas."
+    },
+
+    {
+      "id": "horizontal-pair-rtl",
+      "type": "horizontal-pair",
+      "file": "horizontal-pair/horizontal-pair-rtl.html",
+      "name": "Par Horizontal — Imagen Derecha",
+      "version_ref": "IM02-v4.0",
+      "visual": {
+        "layout": "two-column-50-50",
+        "width": 620,
+        "bg_color": "#FFFFFF",
+        "image_position": "right",
+        "direction": "dir=rtl (imagen derecha en desktop, arriba en mobile)",
+        "columns": {
+          "left_content": ["label-uppercase-navy", "imagen-oferta centrada", "texto-azul", "texto-navy", "cta-button-azul-130px", "texto-legal"],
+          "right_image": ["imagen-desktop-310px", "imagen-mobile (hidden desktop)"]
+        }
+      },
+      "use_when": "Módulo de promo con imagen fotográfica grande a la DERECHA y texto de oferta a la izquierda."
+    },
+
+    {
+      "id": "horizontal-pair-ltr",
+      "type": "horizontal-pair",
+      "file": "horizontal-pair/horizontal-pair-ltr.html",
+      "name": "Par Horizontal — Imagen Izquierda",
+      "version_ref": "IM02-v4.0",
+      "visual": {
+        "layout": "two-column-50-50",
+        "width": 620,
+        "bg_color": "#FFFFFF",
+        "image_position": "left",
+        "direction": "dir=ltr (imagen izquierda en desktop, arriba en mobile)",
+        "columns": {
+          "left_image": ["imagen-desktop-310px", "imagen-mobile (hidden desktop)"],
+          "right_content": ["label-uppercase-navy", "imagen-oferta centrada", "texto-azul", "texto-navy", "cta-button-azul-230px", "texto-legal"]
+        }
+      },
+      "use_when": "Módulo de promo con imagen fotográfica grande a la IZQUIERDA y texto de oferta a la derecha."
+    },
+
+    {
+      "id": "horizontal-pair-ltr-logos",
+      "type": "horizontal-pair",
+      "file": "horizontal-pair/horizontal-pair-ltr-logos.html",
+      "name": "Par Horizontal — Imagen Izquierda + Logos de Marca",
+      "version_ref": "IM02-v4.0",
+      "visual": {
+        "layout": "two-column-50-50",
+        "width": 620,
+        "bg_color": "#FFFFFF",
+        "image_position": "left",
+        "direction": "dir=ltr",
+        "columns": {
+          "left_image": ["imagen-desktop-310px", "imagen-mobile (hidden desktop)"],
+          "right_content": ["texto-descripción", "imagen-oferta-pct centrada", "fila-logos-marcas (3 logos inline)", "cta-button-azul-130px", "texto-legal-bold+normal"]
+        },
+        "extra": "fila de logos de marcas participantes (Jumbo, Disco, Vea o similares)"
+      },
+      "use_when": "Módulo de promo con imagen izquierda + logos de marcas participantes (supermercados, tiendas). Variante de horizontal-pair-ltr con logos adicionales."
+    },
+
+    {
+      "id": "cta-banner-navy",
+      "type": "cta-banner",
+      "file": "cta-banner/cta-banner-navy.html",
+      "name": "CTA Banner — Navy (#00175A)",
+      "version_ref": "TM04-v4.2",
+      "visual": {
+        "layout": "single-column-color-bg",
+        "width": 620,
+        "bg_color": "#00175A",
+        "padding": "35px 20px",
+        "content": ["texto-blanco centrado con link subrayado blanco"],
+        "rows": 1
+      },
+      "use_when": "Banner de llamada a acción sobre fondo navy oscuro. Frase corta + link 'acá' subrayado. Cierre de sección de beneficios."
+    },
+
+    {
+      "id": "cta-banner-blue",
+      "type": "cta-banner",
+      "file": "cta-banner/cta-banner-blue.html",
+      "name": "CTA Banner — Blue (#006FCF)",
+      "version_ref": "TM04-v4.0",
+      "visual": {
+        "layout": "single-column-color-bg",
+        "width": 620,
+        "bg_color": "#006FCF",
+        "padding": "36px 20px",
+        "content": ["texto-blanco centrado: nombre de tarjeta en bold + link subrayado blanco"],
+        "rows": 1
+      },
+      "use_when": "Banner CTA sobre fondo azul brillante. Menciona explícitamente el nombre de la tarjeta (Gold/Platinum). Versión v4.0."
+    },
+
+    {
+      "id": "offer-code-hotel-benefits",
+      "type": "offer-code-hotel",
+      "file": "offer-code-hotel/offer-code-hotel-benefits.html",
+      "name": "Offer Code Hotel — Beneficios The Hotel Collection",
+      "version_ref": "TM04-v4.2",
+      "visual": {
+        "layout": "single-column-grey-bg",
+        "width": 620,
+        "bg_color": "#F4F5F6",
+        "rows": [
+          "logo-THE-HOTEL-COLLECTION centrado (354px)",
+          "texto-descripción centrado",
+          "grilla 2x2: 4 beneficios (ícono 39px + texto inline)",
+          "notas al pie pequeñas",
+          "imagen-separador full-width (desktop) / mobile"
+        ],
+        "benefit_grid": {
+          "cols": 2,
+          "items": ["Early Check-in", "Crédito F&B/Spa", "Late Check-out", "Upgrade habitación"]
+        }
+      },
+      "use_when": "Bloque de beneficios del programa Hotel Collection: 4 ítems en grilla 2x2 con íconos. Fondo gris #F4F5F6."
+    },
+
+    {
+      "id": "offer-code-hotel-offer",
+      "type": "offer-code-hotel",
+      "file": "offer-code-hotel/offer-code-hotel-offer.html",
+      "name": "Offer Code Hotel — Oferta Especial (3ra noche gratis)",
+      "version_ref": "TM04-v4.2",
+      "visual": {
+        "layout": "single-column-white",
+        "width": 620,
+        "bg_color": "#FFFFFF",
+        "rows": [
+          "ícono-estrella centrado (39px)",
+          "label: OFERTA ESPECIAL uppercase gris",
+          "headline-grande navy bold: 'Tercera noche gratuita'",
+          "texto-descripción: 'abonando dos noches consecutivas...'"
+        ]
+      },
+      "use_when": "Encabezado de oferta especial de 3ra noche gratuita. Se coloca antes de los hotel-cards."
+    },
+
+    {
+      "id": "hotel-card-ltr",
+      "type": "hotel-card",
+      "file": "hotel-card/hotel-card-ltr.html",
+      "name": "Hotel Card — Imagen Izquierda",
+      "version_ref": "HB08-v4.2",
+      "visual": {
+        "layout": "two-column-50-50",
+        "width": 620,
+        "bg_color": "#F4F5F6",
+        "image_position": "left",
+        "direction": "dir=ltr",
+        "columns": {
+          "left_image": ["foto-hotel full-width (desktop)", "foto-hotel mobile"],
+          "right_content": ["nombre-hotel navy bold 16px", "descripción-hotel 15px gris", "validez-oferta 10px gris pequeño"]
+        }
+      },
+      "use_when": "Tarjeta de hotel individual con imagen a la IZQUIERDA. Fondo gris #F4F5F6. Incluye nombre, descripción y fechas de validez."
+    },
+
+    {
+      "id": "hotel-card-rtl",
+      "type": "hotel-card",
+      "file": "hotel-card/hotel-card-rtl.html",
+      "name": "Hotel Card — Imagen Derecha",
+      "version_ref": "HB08-v4.2",
+      "visual": {
+        "layout": "two-column-50-50",
+        "width": 620,
+        "bg_color": "#F4F5F6",
+        "image_position": "right",
+        "direction": "dir=rtl",
+        "columns": {
+          "left_content": ["nombre-hotel navy bold 16px", "descripción-hotel 15px gris", "validez-oferta 10px gris pequeño"],
+          "right_image": ["foto-hotel full-width (desktop)", "foto-hotel mobile"]
+        }
+      },
+      "use_when": "Tarjeta de hotel individual con imagen a la DERECHA. Fondo gris #F4F5F6. Se alterna con hotel-card-ltr para crear ritmo visual."
+    },
+
+    {
+      "id": "section-divider",
+      "type": "section-divider",
+      "file": "section-divider/section-divider.html",
+      "name": "Divisor de Sección",
+      "version_ref": "TM06-v4.2",
+      "visual": {
+        "layout": "single-row-divider",
+        "width": 620,
+        "bg_color": "#FFFFFF",
+        "content": ["HR línea gris", "texto-uppercase bold 14px centrado", "HR línea gris"],
+        "hr_color": "#595959"
+      },
+      "use_when": "Separador visual entre secciones con label de texto centrado entre dos líneas horizontales. Ej: 'Platinum Travel Services®'."
+    },
+
+    {
+      "id": "cross-sell-icons-2",
+      "type": "cross-sell-icons",
+      "file": "cross-sell-icons/cross-sell-icons-2.html",
+      "name": "Cross-Sell Icons — 2 Íconos (con divisor)",
+      "version_ref": "FM01-v4.0",
+      "visual": {
+        "layout": "section-divider-then-icon-row",
+        "width": 620,
+        "bg_color": "#FFFFFF",
+        "divider": {
+          "hr_color": "#000",
+          "label": "texto 'Obtené más de American Express®'"
+        },
+        "icon_row": {
+          "cols": 2,
+          "item_structure": ["ícono-48px link", "texto-link azul centrado debajo"]
+        },
+        "border_bottom": "1px solid #d9d9d6"
+      },
+      "use_when": "Área de cross-sell con 2 íconos de servicios (ej: Sumá un adicional, Beneficios). Incluye divisor de sección integrado."
+    },
+
+    {
+      "id": "cross-sell-icons-4",
+      "type": "cross-sell-icons",
+      "file": "cross-sell-icons/cross-sell-icons-4.html",
+      "name": "Cross-Sell Icons — 4 Íconos (sin divisor)",
+      "version_ref": "FM01-v4.2",
+      "visual": {
+        "layout": "icon-row",
+        "width": 620,
+        "bg_color": "#FFFFFF",
+        "icon_row": {
+          "cols": 4,
+          "item_structure": ["ícono-48px link", "texto-label gris centrado debajo (en <p>)"],
+          "role": "list/listitem (accesible)"
+        }
+      },
+      "use_when": "Fila de 4 íconos de servicios de travel (Aéreos, Hoteles, Cruceros, Autos). Sin divisor propio, requiere section-divider separado."
+    },
+
+    {
+      "id": "contact-cta",
+      "type": "contact-cta",
+      "file": "contact-cta/contact-cta.html",
+      "name": "Contact CTA — Teléfono + Botón",
+      "version_ref": "TM17-v4.2",
+      "visual": {
+        "layout": "single-column-white",
+        "width": 620,
+        "bg_color": "#FFFFFF",
+        "rows": [
+          "texto-instruccion: 'Para realizar tu reserva, comunicate con NOMBRE llamando al TELEFONO'",
+          "botón-navy (#00175A) 230px: 'Conocé más beneficios'"
+        ]
+      },
+      "use_when": "Bloque de contacto con número de teléfono y botón CTA navy. Usado en emails de travel para Platinum Travel Services."
+    },
+
+    {
+      "id": "footer-tagline",
+      "type": "footer-tagline",
+      "file": "footer-tagline/footer-tagline.html",
+      "name": "Footer Tagline",
+      "version_ref": "FM05-v4.0",
+      "visual": {
+        "layout": "single-column-white",
+        "width": 620,
+        "bg_color": "#FFFFFF",
+        "padding": "40px 0",
+        "content": ["imagen-tagline centrada 376px (ej: 'No vivas la vida sin ella')"]
+      },
+      "use_when": "Imagen de slogan/tagline AMEX centrada. Va antes de social icons."
+    },
+
+    {
+      "id": "social-icons",
+      "type": "social-icons",
+      "file": "social-icons/social-icons.html",
+      "name": "Social Icons",
+      "version_ref": "FM02",
+      "visual": {
+        "layout": "single-row-centered",
+        "width": 620,
+        "bg_color": "#FFFFFF",
+        "padding": "20px 0",
+        "content": ["3 íconos 28px en fila horizontal: Instagram | Facebook | YouTube"],
+        "spacing": "30px entre íconos"
+      },
+      "use_when": "Fila de íconos de redes sociales. Va antes del footer-nav."
+    },
+
+    {
+      "id": "footer-nav-v40",
+      "type": "footer-nav",
+      "file": "footer-nav/footer-nav-v40.html",
+      "name": "Footer Nav v4.0",
+      "version_ref": "FM03-v4.0",
+      "visual": {
+        "layout": "single-row-nav",
+        "width": 620,
+        "bg_color": "#FFFFFF",
+        "border_top": "1px solid #DEDEDE",
+        "padding": "16px 0 15px",
+        "links": ["Privacidad", "Contacto", "Actualizar email", "Desuscribirse"],
+        "link_color": "#006FCF",
+        "link_padding": "0 30px",
+        "aria_roles": false
+      },
+      "use_when": "Barra de navegación del footer con 4 links en azul #006FCF. Versión clásica (Gold/Merchant)."
+    },
+
+    {
+      "id": "footer-nav-v42",
+      "type": "footer-nav",
+      "file": "footer-nav/footer-nav-v42.html",
+      "name": "Footer Nav v4.2",
+      "version_ref": "FM03-v4.2",
+      "visual": {
+        "layout": "single-row-nav",
+        "width": 620,
+        "bg_color": "#FFFFFF",
+        "border_top": "1px solid #DBDBDB",
+        "padding": "16px 0 15px",
+        "links": ["Privacidad", "Contacto", "Actualizar email", "Desuscribirse"],
+        "link_color": "#000000",
+        "link_padding": "0 10px (+ display block interno)",
+        "aria_roles": true
+      },
+      "use_when": "Barra de navegación del footer con 4 links en negro #000000. Versión moderna con roles ARIA (Platinum/Travel)."
+    },
+
+    {
+      "id": "terms-v40",
+      "type": "terms",
+      "file": "terms/terms-v40.html",
+      "name": "Términos y Condiciones v4.0",
+      "version_ref": "FM04-v4.0",
+      "visual": {
+        "layout": "single-column-grey",
+        "width": 620,
+        "bg_color": "#D9D9D6",
+        "rows": [
+          "imagen-CFT (Costo Financiero Total) 367px",
+          "bloque-texto-justificado uppercase 13px gris: TyC numerados + texto privacidad + {EMAIL}"
+        ]
+      },
+      "use_when": "Bloque de términos legales sobre fondo beige #D9D9D6. Incluye imagen CFT y TyC numerados. Versión Gold/clásica."
+    },
+
+    {
+      "id": "terms-v42",
+      "type": "terms",
+      "file": "terms/terms-v42.html",
+      "name": "Términos y Condiciones v4.2",
+      "version_ref": "FM04-v4.2",
+      "visual": {
+        "layout": "single-column-grey",
+        "width": 620,
+        "bg_color": "#E0E0E0",
+        "rows": [
+          "bloque-texto-justificado uppercase 13px gris: TyC numerados + texto privacidad + {EMAIL}"
+        ],
+        "nota": "sin imagen CFT, solo texto"
+      },
+      "use_when": "Bloque de términos legales sobre fondo gris #E0E0E0. Sin imagen CFT, solo texto. Versión Platinum/Travel."
+    },
+
+    {
+      "id": "footer-combined",
+      "type": "footer",
+      "file": "footer/footer-combined.html",
+      "name": "Footer Completo (combinado)",
+      "version_ref": "FM05+FM02+FM03+FM04-v4.2",
+      "visual": {
+        "layout": "stacked-footer-sections",
+        "width": 620,
+        "sections": [
+          "footer-tagline: imagen 'No vivas la vida sin ella'",
+          "social-icons: Instagram | Facebook | YouTube",
+          "footer-nav-v42: Privacidad | Contacto | Actualizar email | Desuscribirse (links navy)",
+          "terms-v42: texto legal completo fondo #E0E0E0"
+        ]
+      },
+      "use_when": "Footer completo de una sola pieza (los 4 sub-componentes juntos). Usar cuando se quiera el footer entero como un bloque. Alternativa: usar los 4 componentes individuales."
+    }
+
+  ]
+}

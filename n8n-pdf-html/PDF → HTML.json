@@ -1,0 +1,776 @@
+{
+  "name": "PDF -> HTML v3 (render.png + Loop por componente)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "72065eaf-f719-43cb-9099-1bff54200b1a",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f0c2bc4a-0264-4f5f-8873-b5a0fc85368c",
+      "name": "Webhook - Start",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        133472,
+        -1480
+      ],
+      "webhookId": "72065eaf-f719-43cb-9099-1bff54200b1a"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || {};\nconst pdf_url = body.pdf_url || body.url || $json.pdf_url;\nif (!pdf_url) throw new Error('Falta \"pdf_url\" en el body. Ej: { \"pdf_url\": \"https://.../file.pdf\" }');\n\nconst template_base_url = (body.template_base_url || 'http://149.130.164.187:2020').toString().replace(/\\/+$/, '');\nconst extractor_url = body.extractor_url || 'http://149.130.164.187:5050/api/v1/extract-from-url';\nconst response_mode = body.response_mode || 'html';\n\nreturn [{ json: { body, pdf_url, extractor_url, template_base_url, response_mode } }];"
+      },
+      "id": "24387c3d-f49c-47bd-b6f1-3163768c4873",
+      "name": "Validate + Defaults",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        133696,
+        -1480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.extractor_url }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "url",
+              "value": "={{ $json.pdf_url }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 600000
+        }
+      },
+      "id": "dcd7deed-bb3c-48a6-9355-c0b28af6602d",
+      "name": "Extract PDF Images (ZIP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        133920,
+        -1480
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "0dbdf994-7c03-427c-92a7-d4fa1388f547",
+      "name": "Extract ZIP",
+      "type": "n8n-nodes-base.compression",
+      "typeVersion": 1,
+      "position": [
+        134144,
+        -1480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function baseName(p) {\n  if (!p) return '';\n  const s = p.toString();\n  return s.includes('/') ? s.split('/').pop() : s.includes('\\\\') ? s.split('\\\\').pop() : s;\n}\n\nconst items = $input.all();\nif (!items.length) throw new Error('No input items');\n\nconst binaries = [];\nconst seenKeys = new Set();\nfor (let i = 0; i < items.length; i++) {\n  const bin = items[i].binary || {};\n  for (const [key, b] of Object.entries(bin)) {\n    let uniq = key;\n    if (seenKeys.has(uniq)) uniq = `${i}_${key}`;\n    seenKeys.add(uniq);\n    binaries.push({ uniqKey: uniq, b });\n  }\n}\n\nconst metaEntry = binaries.find(e => {\n  const fn = (e.b.fileName || '').toString().toLowerCase();\n  const base = baseName(fn);\n  return base === 'metadata.json' || fn.endsWith('metadata.json');\n}) || binaries.find(e => (e.b.fileName || '').toString().toLowerCase().includes('meta') && (e.b.mimeType || '').includes('json'));\n\nif (!metaEntry) {\n  throw new Error('No metadata.json found in extracted ZIP');\n}\nif (!metaEntry.b.data) throw new Error('metadata.json binary has no data');\n\nlet metadata;\ntry {\n  const txt = Buffer.from(metaEntry.b.data, 'base64').toString('utf8');\n  metadata = JSON.parse(txt);\n} catch (e) {\n  throw new Error(`Failed to parse metadata.json: ${e.message}`);\n}\n\nconst lowerBase = (v) => baseName(v || '').toLowerCase();\nconst renderEntry = binaries.find(e => lowerBase(e.b.fileName) === 'page001_render_ocr.png')\n  || binaries.find(e => lowerBase(e.b.fileName) === 'page001_render.png')\n  || binaries.find(e => /page0*1[_-]?render[_-]?ocr\\.png$/i.test(baseName(e.b.fileName || '')))\n  || binaries.find(e => /page0*1[_-]?render\\.png$/i.test(baseName(e.b.fileName || '')))\n  || binaries.find(e => /render[_-]?ocr\\.png$/i.test(baseName(e.b.fileName || '')))\n  || binaries.find(e => /render\\.png$/i.test(baseName(e.b.fileName || '')));\n\nconst renderFileName = renderEntry ? baseName(renderEntry.b.fileName || '') : null;\n\n// Prioriza URL OCR para evitar limites de tamaño/dimensiones en LLM vision\nconst sessionId = metadata.session_id || null;\nconst baseUrl = metadata.base_url || null;\nlet renderPngUrl = metadata.render_ocr_png_url || metadata.render_png_url || null;\nif (!renderPngUrl && sessionId && baseUrl && renderFileName) {\n  renderPngUrl = `${baseUrl}/api/v1/images/${sessionId}/${renderFileName}`;\n}\n\nreturn [{\n  json: {\n    metadata,\n    render_png_url: renderPngUrl,\n    render_ocr_png_url: metadata.render_ocr_png_url || null,\n    render_filename: renderFileName,\n    session_id: sessionId,\n    base_url: baseUrl,\n  },\n}];"
+      },
+      "id": "5cdcf7e4-7fbb-4a36-8860-8448d5f2a69d",
+      "name": "Parse Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        134368,
+        -1480
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "modelId": {
+          "__rl": true,
+          "value": "claude-sonnet-4-5-20250929",
+          "mode": "list",
+          "cachedResultName": "claude-sonnet-4-5-20250929"
+        },
+        "text": "=Eres un experto en analisis de diseno de newsletters y conversion PDF a HTML.\n\nTe adjunto el render.png de la primera pagina del PDF. Es un newsletter con diseno tipo email.\n\nTAREA: Analiza visualmente el render.png y entrega:\n\nA) WIREFRAME ASCII (cajitas) representando la jerarquia y el layout:\n- Header (logo, links de navegacion)\n- Hero/banner principal\n- Bloques de contenido / secciones de oferta\n- Grillas (2 columnas / 3 columnas si aplica)\n- Cards/promos (imagen + texto + boton)\n- Bloque legal\n- Footer con links e iconos sociales\n\nUSA cajitas tipo:\n+----------------------------------+\n| ELEMENTO                         |\n+----------------------------------+\n\nB) LISTA DE SECCIONES en orden de arriba hacia abajo (ej: header -> hero -> grilla compras -> gastronomia -> hoteles -> cta -> footer).\n\nC) INVENTARIO DE COMPONENTES reutilizables: nombre del componente, campos que tiene (imagen, titulo, descripcion, boton, color de fondo).\n\nREGLAS:\n- No inventes contenido. Si no se lee claramente, usa etiquetas genericas: [LOGO], [TITULO], [IMAGEN], [CTA], [LEGAL].\n- Respeta la distribucion real (2 columnas = 2 columnas).\n- No incluyas CSS ni HTML todavia.",
+        "options": {
+          "maxTokens": 8192
+        },
+        "inputType": "url",
+        "operation": "analyze",
+        "imageUrls": "={{ $json.render_ocr_png_url || $json.render_png_url || $('Parse Metadata').item.json.metadata.render_ocr_png_url || $('Parse Metadata').item.json.metadata.render_png_url || $('Validate + Defaults').item.json.pdf_url }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.anthropic",
+      "typeVersion": 1,
+      "position": [
+        134592,
+        -1480
+      ],
+      "id": "607bc579-4d0b-406d-a6a4-3ac6e3bfc82c",
+      "name": "arma wireframe",
+      "credentials": {
+        "anthropicApi": {
+          "id": "0jcs0BuBIANeAsiG",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build a compact prompt for Gemini using metadata.json\nconst parseMeta = $items('Parse Metadata')[0]?.json || {};\nconst metadata = parseMeta.metadata;\n\nif (!metadata || !metadata.images) throw new Error('metadata.images missing');\n\nconst wireframeNode = $items('arma wireframe')[0]?.json;\nlet wireframeText = '';\nif (wireframeNode) {\n  if (Array.isArray(wireframeNode.content) && wireframeNode.content[0]?.text) {\n    wireframeText = wireframeNode.content[0].text;\n  } else {\n    wireframeText = wireframeNode.text || wireframeNode.output || wireframeNode.response || JSON.stringify(wireframeNode).slice(0, 3000);\n  }\n}\n\nconst images = metadata.images.map(img => ({\n  filename: img.filename,\n  url: img.url,\n  page_number: img.page_number,\n  x0: img.x0, y0: img.y0, x1: img.x1, y1: img.y1,\n  bbox_width: img.bbox_width, bbox_height: img.bbox_height\n}));\n\nconst prompt = [\n  'Eres un clasificador de imágenes dentro de un PDF. Usa el PDF y estas coordenadas para identificar cada imagen y su rol en una página web.',\n  '',\n  `CRÍTICO: Debes clasificar las ${images.length} imágenes del metadata. NO omitas ninguna imagen, incluso si son pequeñas, iconos o decorativas.`,\n  '',\n  'Tareas:',\n  '1) OCR/identificación: deduce el contenido visual de cada imagen usando el PDF.',\n  '2) Clasificación: asigna UNA etiqueta HTML de esta lista: header, nav, main, section, article, aside, footer.',\n  `3) IMPORTANTE: La respuesta debe incluir TODAS las imágenes del metadata (${images.length} imágenes en total).`,\n  '4) Responde SOLO con JSON válido (sin markdown) con la estructura:',\n  '{\"images\":[{\"filename\":\"...\",\"url\":\"...\",\"page_number\":1,\"bbox\":{\"x0\":0,\"y0\":0,\"x1\":0,\"y1\":0},\"label\":\"header|nav|...\",\"ocr_text\":\"...\",\"confidence\":0.0}]}',\n  '',\n  'Notas:',\n  '- El origen (0,0) es la esquina inferior izquierda de la página.',\n  '- Usa las coordenadas para inferir ubicación (arriba=header, abajo=footer, lateral=aside, etc.).',\n  '- Clasifica TODAS las imágenes, incluyendo logos, iconos, botones, y gráficos pequeños.',\n  '',\n  'Contexto adicional (wireframe previo):',\n  wireframeText.slice(0, 2000) || '(sin wireframe)',\n  '',\n  'metadata:',\n  JSON.stringify({\n    pdf_file: metadata.pdf_file,\n    total_pages: metadata.total_pages,\n    total_images: metadata.total_images,\n    render_dpi: metadata.render_dpi,\n    note: metadata.note,\n    images\n  })\n].join('\\n');\n\nreturn [{\n  json: {\n    ...parseMeta,\n    prompt,\n    wireframe_text: wireframeText,\n    render_png_url: parseMeta.render_png_url || null,\n    render_ocr_png_url: parseMeta.render_ocr_png_url || null,\n  }\n}];"
+      },
+      "id": "ea41b43e-c78e-46d4-b7a1-82096c031fbf",
+      "name": "Build Gemini Prompt con base de wireframe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        134816,
+        -1480
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "modelId": {
+          "__rl": true,
+          "value": "claude-sonnet-4-5-20250929",
+          "mode": "list",
+          "cachedResultName": "claude-sonnet-4-5-20250929"
+        },
+        "text": "={{ $json.prompt }}",
+        "options": {
+          "maxTokens": 8192
+        },
+        "inputType": "url",
+        "operation": "analyze",
+        "imageUrls": "={{ $json.render_ocr_png_url || $json.render_png_url || $('Validate + Defaults').item.json.pdf_url }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.anthropic",
+      "typeVersion": 1,
+      "position": [
+        135040,
+        -1480
+      ],
+      "id": "8e36a72f-f379-4ad1-b014-f31f3f2d81ca",
+      "name": "Analyze document",
+      "credentials": {
+        "anthropicApi": {
+          "id": "0jcs0BuBIANeAsiG",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function stripCodeFences(s) {\n  if (!s) return s;\n  const t = s.trim();\n  if (t.startsWith('```')) {\n    const firstNewline = t.indexOf('\\n');\n    const body = firstNewline >= 0 ? t.slice(firstNewline + 1) : '';\n    const endFence = body.lastIndexOf('```');\n    return (endFence >= 0 ? body.slice(0, endFence) : body).trim();\n  }\n  return t;\n}\n\nfunction pickText(obj) {\n  if (!obj) return null;\n  if (typeof obj === 'string') return obj;\n  if (typeof obj.text === 'string') return obj.text;\n  if (typeof obj.responseText === 'string') return obj.responseText;\n  if (typeof obj.content === 'string') return obj.content;\n  if (obj.content && obj.content.parts && Array.isArray(obj.content.parts)) {\n    const part = obj.content.parts.find(p => typeof p.text === 'string');\n    if (part) return part.text;\n  }\n  if (obj.candidates && Array.isArray(obj.candidates)) {\n    for (const c of obj.candidates) {\n      if (c && c.content) {\n        if (typeof c.content === 'string') return c.content;\n        if (c.content.parts && Array.isArray(c.content.parts)) {\n          const part = c.content.parts.find(p => typeof p.text === 'string');\n          if (part) return part.text;\n        }\n      }\n      if (typeof c.text === 'string') return c.text;\n    }\n  }\n  if (obj.content && Array.isArray(obj.content)) {\n    const part = obj.content.find(p => typeof p.text === 'string');\n    if (part) return part.text;\n  }\n  for (const key of ['response', 'data', 'output', 'result']) {\n    if (obj[key]) { const t = pickText(obj[key]); if (t) return t; }\n  }\n  if (Array.isArray(obj)) { for (const it of obj) { const t = pickText(it); if (t) return t; } }\n  return null;\n}\n\nconst input = $json;\nlet text = pickText(input);\nif (!text) throw new Error('No text response found from Gemini. Keys: ' + JSON.stringify(Object.keys(input || {})));\n\ntext = stripCodeFences(text);\nlet mapping;\ntry { mapping = JSON.parse(text); }\ncatch (e) { throw new Error('Failed to parse JSON from Gemini: ' + e.message + '\\nRaw: ' + text.slice(0, 500)); }\n\nreturn [{ json: { mapping } }];"
+      },
+      "id": "66f9b7f0-079c-48ce-b71d-3983b65fc202",
+      "name": "Parse Gemini Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        135264,
+        -1480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const mapping = $json.mapping || {};\nconst mappedImages = Array.isArray(mapping.images) ? mapping.images : [];\n\nconst parseMeta = $items('Parse Metadata')[0]?.json || {};\nconst metadataImages = Array.isArray(parseMeta?.metadata?.images) ? parseMeta.metadata.images : [];\nconst renderPngUrl = parseMeta.render_png_url || null;\nconst renderOcrPngUrl = parseMeta.render_ocr_png_url || null;\nconst sessionId = parseMeta.session_id || null;\nconst pdfUrl = $items('Validate + Defaults')[0]?.json?.pdf_url || null;\n\nconst buildPromptNode = $items('Build Gemini Prompt con base de wireframe')[0]?.json || {};\nconst wireframeText = buildPromptNode.wireframe_text || '';\n\nconst ALLOWED = ['header', 'nav', 'main', 'section', 'article', 'aside', 'footer'];\nconst LABEL_SYNONYMS = {\n  hero: 'main',\n  body: 'main',\n  content: 'main',\n  promo: 'section',\n  promociones: 'section',\n  gallery: 'section',\n  legal: 'footer',\n  social: 'footer',\n};\n\nconst normalizeLabel = (raw) => {\n  const src = String(raw || '').trim().toLowerCase();\n  if (!src) return 'section';\n  if (ALLOWED.includes(src)) return src;\n  if (LABEL_SYNONYMS[src]) return LABEL_SYNONYMS[src];\n  if (src.includes('header')) return 'header';\n  if (src.includes('nav')) return 'nav';\n  if (src.includes('footer') || src.includes('legal')) return 'footer';\n  if (src.includes('aside') || src.includes('sidebar') || src.includes('lateral')) return 'aside';\n  if (src.includes('article') || src.includes('card')) return 'article';\n  if (src.includes('main') || src.includes('hero')) return 'main';\n  return 'section';\n};\n\nconst mapByFilename = new Map(mappedImages.map((img) => [String(img.filename || ''), img]));\nconst mergedImages = metadataImages.map((metaImg) => {\n  const fromModel = mapByFilename.get(String(metaImg.filename || '')) || {};\n  const x0 = Number(metaImg.x0 ?? fromModel?.bbox?.x0 ?? 0);\n  const y0 = Number(metaImg.y0 ?? fromModel?.bbox?.y0 ?? 0);\n  const x1 = Number(metaImg.x1 ?? fromModel?.bbox?.x1 ?? 0);\n  const y1 = Number(metaImg.y1 ?? fromModel?.bbox?.y1 ?? 0);\n\n  return {\n    filename: metaImg.filename,\n    url: metaImg.url || fromModel.url || null,\n    page_number: Number(metaImg.page_number || fromModel.page_number || 1),\n    bbox: { x0, y0, x1, y1 },\n    width: Math.max(0, x1 - x0),\n    height: Math.max(0, y1 - y0),\n    area: Math.max(0, x1 - x0) * Math.max(0, y1 - y0),\n    y_center: (y0 + y1) / 2,\n    ocr_text: fromModel.ocr_text || '',\n    confidence: Number(fromModel.confidence ?? 0),\n    label: normalizeLabel(fromModel.label),\n  };\n});\n\nif (!mergedImages.length) {\n  throw new Error('No hay imagenes para clasificar en componentes.');\n}\n\nconst avg = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;\nconst headerYs = mergedImages.filter((x) => x.label === 'header').map((x) => x.y_center);\nconst footerYs = mergedImages.filter((x) => x.label === 'footer').map((x) => x.y_center);\n// true => y pequeño está arriba (top-left). false => y grande está arriba (bottom-left).\nlet originTopLeft = true;\nif (headerYs.length && footerYs.length) {\n  originTopLeft = avg(headerYs) < avg(footerYs);\n}\n\nconst topFirstComparator = (a, b) => {\n  const ay = Number(a?.y_center ?? 0);\n  const by = Number(b?.y_center ?? 0);\n  const primary = originTopLeft ? (ay - by) : (by - ay);\n  if (primary !== 0) return primary;\n  return Number(a?.bbox?.x0 ?? 0) - Number(b?.bbox?.x0 ?? 0);\n};\n\nconst pageStats = {};\nfor (const img of mergedImages) {\n  const p = img.page_number;\n  if (!pageStats[p]) pageStats[p] = { maxX: 0, maxY: 0, minX: Number.POSITIVE_INFINITY, minY: Number.POSITIVE_INFINITY };\n  pageStats[p].maxX = Math.max(pageStats[p].maxX, img.bbox.x1 || 0);\n  pageStats[p].maxY = Math.max(pageStats[p].maxY, img.bbox.y1 || 0);\n  pageStats[p].minX = Math.min(pageStats[p].minX, img.bbox.x0 || 0);\n  pageStats[p].minY = Math.min(pageStats[p].minY, img.bbox.y0 || 0);\n}\n\nconst rowsByPage = {};\nfor (const [pageRaw, stats] of Object.entries(pageStats)) {\n  const page = Number(pageRaw);\n  const pageImages = mergedImages\n    .filter((img) => img.page_number === page)\n    .sort(topFirstComparator);\n\n  const pageHeight = Math.max(1, stats.maxY - Math.min(0, stats.minY));\n  const verticalThreshold = Math.max(90, pageHeight * 0.06);\n\n  const rows = [];\n  for (const img of pageImages) {\n    let target = null;\n    for (const row of rows) {\n      const centerGap = Math.abs(img.y_center - row.y_center);\n      const overlap = Math.min(img.bbox.y1, row.maxY) - Math.max(img.bbox.y0, row.minY);\n      if (centerGap <= verticalThreshold || overlap >= -10) {\n        target = row;\n        break;\n      }\n    }\n\n    if (!target) {\n      rows.push({\n        images: [img],\n        minY: img.bbox.y0,\n        maxY: img.bbox.y1,\n        y_center: img.y_center,\n        area: img.area,\n      });\n    } else {\n      target.images.push(img);\n      target.minY = Math.min(target.minY, img.bbox.y0);\n      target.maxY = Math.max(target.maxY, img.bbox.y1);\n      target.y_center = (target.minY + target.maxY) / 2;\n      target.area += img.area;\n    }\n  }\n\n  const sortedRows = rows.sort(topFirstComparator);\n  const pageArea = Math.max(1, (stats.maxX - stats.minX) * pageHeight);\n\n  for (let i = 0; i < sortedRows.length; i++) {\n    const row = sortedRows[i];\n    const rowAreaRatio = row.area / pageArea;\n    if (row.images.length > 1 || rowAreaRatio > 0.01) continue;\n\n    let nearest = -1;\n    let bestGap = Number.POSITIVE_INFINITY;\n    for (let j = 0; j < sortedRows.length; j++) {\n      if (j === i) continue;\n      const gap = Math.abs(sortedRows[j].y_center - row.y_center);\n      if (gap < bestGap) {\n        bestGap = gap;\n        nearest = j;\n      }\n    }\n\n    if (nearest >= 0 && bestGap <= verticalThreshold * 1.8) {\n      const dst = sortedRows[nearest];\n      dst.images.push(...row.images);\n      dst.minY = Math.min(dst.minY, row.minY);\n      dst.maxY = Math.max(dst.maxY, row.maxY);\n      dst.y_center = (dst.minY + dst.maxY) / 2;\n      dst.area += row.area;\n      row.images = [];\n    }\n  }\n\n  const compactRows = sortedRows.filter((r) => r.images.length > 0);\n  const maxRowsByPage = page === 1 ? 6 : page === 2 ? 3 : 2;\n\n  while (compactRows.length > maxRowsByPage) {\n    let idx = 0;\n    let minGap = Number.POSITIVE_INFINITY;\n    for (let i = 0; i < compactRows.length - 1; i++) {\n      const gap = Math.abs(compactRows[i].y_center - compactRows[i + 1].y_center);\n      if (gap < minGap) {\n        minGap = gap;\n        idx = i;\n      }\n    }\n\n    const a = compactRows[idx];\n    const b = compactRows[idx + 1];\n    a.images.push(...b.images);\n    a.minY = Math.min(a.minY, b.minY);\n    a.maxY = Math.max(a.maxY, b.maxY);\n    a.y_center = (a.minY + a.maxY) / 2;\n    a.area += b.area;\n    compactRows.splice(idx + 1, 1);\n  }\n\n  for (const row of compactRows) {\n    row.images.sort((a, b) => Number(a?.bbox?.x0 ?? 0) - Number(b?.bbox?.x0 ?? 0));\n  }\n\n  rowsByPage[page] = compactRows.sort(topFirstComparator);\n}\n\nconst pages = Object.keys(rowsByPage).map(Number).sort((a, b) => a - b);\nconst components = [];\nlet globalIndex = 0;\n\nfor (const page of pages) {\n  const rows = rowsByPage[page] || [];\n  const stats = pageStats[page] || { maxY: 1, minY: 0, maxX: 620, minX: 0 };\n  const pageHeight = Math.max(1, stats.maxY - Math.min(0, stats.minY));\n  const pageArea = Math.max(1, (stats.maxX - stats.minX) * pageHeight);\n\n  rows.forEach((row, rowIndex) => {\n    globalIndex += 1;\n\n    const yNorm = (row.y_center - stats.minY) / Math.max(1, stats.maxY - stats.minY);\n    const topness = originTopLeft ? (1 - yNorm) : yNorm;\n\n    const rowAreaRatio = row.area / pageArea;\n    const labels = row.images.map((img) => img.label).filter(Boolean);\n    const labelFreq = labels.reduce((acc, x) => {\n      acc[x] = (acc[x] || 0) + 1;\n      return acc;\n    }, {});\n    const dominantLabel = Object.entries(labelFreq).sort((a, b) => b[1] - a[1])[0]?.[0] || 'section';\n\n    let sectionLabel = dominantLabel;\n    if (rowIndex === 0 && page === 1 && (dominantLabel === 'header' || topness > 0.8)) sectionLabel = 'header';\n    else if (rowAreaRatio > 0.2 || dominantLabel === 'main') sectionLabel = 'main';\n    else if (rowIndex === rows.length - 1 && page === pages[pages.length - 1] && topness < 0.25) sectionLabel = 'footer';\n    else if (!ALLOWED.includes(sectionLabel)) sectionLabel = 'section';\n\n    const maxConf = Math.max(...row.images.map((img) => Number(img.confidence || 0)), 0);\n    const anchorHits = [...new Set(labels.length ? labels : [sectionLabel])];\n\n    components.push({\n      component_id: `section_${String(globalIndex).padStart(2, '0')}_${sectionLabel}_p${page}_r${rowIndex}`,\n      section_label: sectionLabel,\n      order: globalIndex - 1,\n      images: row.images.map((img) => ({\n        filename: img.filename,\n        url: img.url,\n        bbox: img.bbox || {},\n        ocr_text: img.ocr_text || '',\n        confidence: Number(img.confidence || 0),\n        page_number: img.page_number || 1,\n      })),\n      render_png_url: renderPngUrl,\n      render_ocr_png_url: renderOcrPngUrl,\n      pdf_url: pdfUrl,\n      session_id: sessionId,\n      wireframe_text: wireframeText,\n      presence_confidence: maxConf,\n      anchor_hits: anchorHits,\n      coordinate_origin: originTopLeft ? 'top_left' : 'bottom_left',\n      skip_generation: false,\n    });\n  });\n}\n\nif (!components.length) {\n  throw new Error('No se pudieron construir componentes desde metadata + OCR.');\n}\n\nreturn components.map((c) => ({ json: c }));"
+      },
+      "id": "c1a5b2d3-e4f5-a6b7-c8d9-e0f1a2b3c4d5",
+      "name": "Clasifica PDF en componentes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        135400,
+        -1480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().map((item) => item.json);\nitems.sort((a, b) => (a.order || 0) - (b.order || 0));\nreturn items.map((json) => ({ json }));"
+      },
+      "id": "0993b3f9-00c6-4ecb-ae70-91aa9aeacaa2",
+      "name": "Crea orden del loop",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        135600,
+        -1480
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        135824,
+        -1480
+      ],
+      "id": "a2358529-eaf0-4b4d-b79e-a797eddcb777",
+      "name": "Loop por componente"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = { ...$json };\nconst round4 = n => Number(Number(n || 0).toFixed(4));\n\n// Usar las imagenes mapeadas al componente\nconst images = (item.images || []).slice(0, 15).map(img => ({\n  src: img.url || '',\n  filename: img.filename || '',\n  bbox: img.bbox || {},\n  ocr_text: img.ocr_text || '',\n  confidence: img.confidence || 0,\n  page_number: img.page_number || 1,\n}));\n\nconst bboxes = images.map(i => i.bbox).filter(b => b && typeof b.x0 === 'number' && typeof b.y0 === 'number');\nlet contentBounds = null;\nif (bboxes.length > 0) {\n  contentBounds = {\n    x0: round4(Math.min(...bboxes.map(b => b.x0))),\n    y0: round4(Math.min(...bboxes.map(b => b.y0))),\n    x1: round4(Math.max(...bboxes.map(b => b.x1))),\n    y1: round4(Math.max(...bboxes.map(b => b.y1))),\n  };\n}\n\nconst evidence = {\n  component_id: item.component_id,\n  section_label: item.section_label,\n  render_png_url: item.render_png_url,\n  render_ocr_png_url: item.render_ocr_png_url || null,\n  pdf_url: item.pdf_url,\n  images,\n  content_bounds: contentBounds,\n  wireframe_text: (item.wireframe_text || '').slice(0, 2000),\n  presence_confidence: item.presence_confidence,\n};\n\nitem.component_payload = JSON.stringify(evidence, null, 2);\nreturn [{ json: item }];"
+      },
+      "id": "8b9cb6c8-ddaa-432f-854d-e1d16f357a2e",
+      "name": "Prepara payload del componente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        136048,
+        -1480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const comp = $json || {};\nconst componentId = comp.component_id || '';\nconst sectionLabel = comp.section_label || componentId;\nconst renderPngUrl = comp.render_ocr_png_url || comp.render_png_url || null;\n\nlet evidence = {};\ntry { evidence = JSON.parse(comp.component_payload || '{}'); } catch(e) {}\n\nconst images = evidence.images || comp.images || [];\nconst wireframeText = (evidence.wireframe_text || comp.wireframe_text || '').slice(0, 1500);\n\nconst imageLines = images.map((img, i) => {\n  const b = img.bbox || {};\n  const bboxStr = typeof b.x0 === 'number'\n    ? `PDF pts: x0=${Math.round(b.x0)}, y0=${Math.round(b.y0)}, x1=${Math.round(b.x1)}, y1=${Math.round(b.y1)}`\n    : 'posicion desconocida';\n  return `  [IMG ${i + 1}] Archivo: ${img.filename || ''}\\n  URL: ${img.src || img.url || ''}\\n  OCR: ${img.ocr_text || 'sin texto detectado'}\\n  ${bboxStr}`;\n}).join('\\n\\n');\n\nconst imagesSummary = images.length > 0 ? imageLines : '  (sin imagenes asignadas a esta seccion)';\n\nconst claude_prompt = `Eres un generador experto de HTML para emails. Construye UNA seccion de email newsletter.\n\nSECCION A CONSTRUIR: \"${sectionLabel}\"\nCOMPONENT_ID (obligatorio en salida): \"${componentId}\"\n\nIMAGENES DISPONIBLES (ya mapeadas a esta seccion por OCR):\n${imagesSummary}\n\nWIREFRAME REFERENCIA (contexto global del documento):\n${wireframeText}\n\nINSTRUCCIONES:\n1. Usa EXACTAMENTE las URLs de imagen de arriba en src/background. NO uses otras URLs.\n2. HTML email valido: SOLO tablas y CSS inline (Outlook/Gmail).\n3. Ancho maximo contenedor: 620px.\n4. ANTI-DESBORDE (OBLIGATORIO):\n   - Toda imagen debe quedar dentro de su contenedor.\n   - En cada <img> usa SIEMPRE: style=\"display:block; width:100%; max-width:100%; height:auto; object-fit:cover;\"\n   - Nunca uses width/height que exceda el <td> padre.\n   - En contenedores de imagen usa style con overflow:hidden.\n5. Si la seccion tiene 2 columnas, usa dos <td width=\"310\" style=\"width:310px;max-width:310px;overflow:hidden;\">.\n6. Respeta layout y proporciones del render.png.\n7. No uses markdown ni triple backticks.\n\nFORMATO DE SALIDA (SOLO JSON valido):\n{\"component_id\":\"${componentId}\",\"component_html\":\"<table role=\\\\\"none\\\\\" ...>...</table>\",\"changed\":true,\"reason\":\"string\"}`;\n\nreturn [{\n  json: {\n    ...comp,\n    render_png_url: renderPngUrl,\n    ocr_lines_count: images.length,\n    claude_prompt,\n  },\n}];"
+      },
+      "id": "cb430ecc-66ca-4ca6-a098-cfb68afea7b0",
+      "name": "Prepara OCR por componente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        136272,
+        -1480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "skip-cond-01",
+              "leftValue": "={{ $json.skip_generation }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ac9a8fab-a031-4cb9-ab04-6f1871a2bc4b",
+      "name": "Omitir si skip_generation",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        136496,
+        -1480
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "modelId": {
+          "__rl": true,
+          "value": "claude-sonnet-4-5-20250929",
+          "mode": "list",
+          "cachedResultName": "claude-sonnet-4-5-20250929"
+        },
+        "text": "={{ $json.claude_prompt }}",
+        "options": {
+          "maxTokens": 32768
+        },
+        "inputType": "url",
+        "operation": "analyze",
+        "imageUrls": "={{ $json.render_ocr_png_url || $json.render_png_url || $('Parse Metadata').item.json.metadata.render_ocr_png_url || $('Parse Metadata').item.json.metadata.render_png_url || $json.pdf_url }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.anthropic",
+      "typeVersion": 1,
+      "position": [
+        136720,
+        -1552
+      ],
+      "id": "0458adfb-77a1-450d-b015-8dd24e464e00",
+      "name": "Valida componente con Claude",
+      "credentials": {
+        "anthropicApi": {
+          "id": "0jcs0BuBIANeAsiG",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        136944,
+        -1408
+      ],
+      "id": "1add2bcb-aec3-435f-a2ac-baef631945cd",
+      "name": "Espera entre iteraciones",
+      "webhookId": "ea5313c0-ca4c-4e77-8fd1-4481e0b89646"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Obtener todos los componentes clasificados\nconst allComponents = $items('Clasifica PDF en componentes').map((i) => i.json);\nif (!allComponents.length) throw new Error('No se encontraron componentes de Clasifica PDF en componentes.');\n\nconst requestInput = $items('Validate + Defaults')[0]?.json || {};\nconst responseMode = requestInput.response_mode || 'html';\n\nconst component_order = allComponents\n  .slice()\n  .sort((a, b) => Number(a.order || 0) - Number(b.order || 0))\n  .map((c) => c.component_id);\n\nconst render_png_url = allComponents[0]?.render_png_url || null;\nconst pdf_url = allComponents[0]?.pdf_url || null;\nconst session_id = allComponents[0]?.session_id || null;\n\nconst extractText = (json) => {\n  const candidates = [json?.content?.[0]?.text, json?.output, json?.text, json?.response, json?.content, json?.message, json?.result, json?.data];\n  for (const v of candidates) {\n    if (typeof v === 'string' && v.trim()) return v;\n  }\n  return JSON.stringify(json || {});\n};\n\nconst decodeEsc = (value) => {\n  const text = String(value || '');\n  return text\n    .replace(/\\\\n/g, '\\n')\n    .replace(/\\\\r/g, '\\r')\n    .replace(/\\\\t/g, '\\t')\n    .replace(/\\\\\"/g, '\"')\n    .replace(/\\\\\\//g, '/');\n};\n\nconst sanitize = (html) => decodeEsc(html).replace(/src\\s*=\\s*\"\\s*(undefined|null)\\s*\"/gi, 'src=\"\"');\n\nconst tryParseJson = (raw) => {\n  let text = String(raw || '').trim();\n  text = text.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/i, '').trim();\n  try {\n    return JSON.parse(text);\n  } catch (_) {}\n\n  const s = text.indexOf('{');\n  const e = text.lastIndexOf('}');\n  if (s >= 0 && e > s) {\n    try {\n      return JSON.parse(text.slice(s, e + 1));\n    } catch (_) {}\n  }\n  return null;\n};\n\nconst parseModelResult = (raw, fallbackComponentId) => {\n  const text = String(raw || '').trim();\n  const parsed = tryParseJson(text);\n  if (parsed && typeof parsed === 'object') {\n    const cid = String(parsed.component_id || fallbackComponentId || '').trim();\n    const html = typeof parsed.component_html === 'string' ? parsed.component_html : '';\n    if (cid && html.trim()) {\n      return {\n        component_id: cid,\n        component_html: sanitize(html),\n        changed: Boolean(parsed.changed),\n        reason: parsed.reason || null,\n        source: 'json',\n      };\n    }\n  }\n\n  const cidMatch = text.match(/\"component_id\"\\s*:\\s*\"([^\"]+)\"/i);\n  const componentId = (cidMatch?.[1] || fallbackComponentId || '').trim();\n\n  const htmlFieldMatch = text.match(/\"component_html\"\\s*:\\s*\"([\\s\\S]*?)\"\\s*(?:,\\s*\"|\\}\\s*$)/i);\n  if (componentId && htmlFieldMatch?.[1]) {\n    return {\n      component_id: componentId,\n      component_html: sanitize(htmlFieldMatch[1]),\n      changed: true,\n      reason: 'regex_component_html',\n      source: 'regex_field',\n    };\n  }\n\n  const tableMatch = text.match(/<table\\b[\\s\\S]*?<\\/table>/i);\n  if (componentId && tableMatch?.[0]) {\n    return {\n      component_id: componentId,\n      component_html: sanitize(tableMatch[0]),\n      changed: true,\n      reason: 'regex_table',\n      source: 'regex_table',\n    };\n  }\n\n  return null;\n};\n\nconst avg = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;\nconst imageRowsAll = allComponents.flatMap((c) => (c.images || []).map((img) => ({\n  y: (Number(img?.bbox?.y0 ?? 0) + Number(img?.bbox?.y1 ?? 0)) / 2,\n  isHeader: c.section_label === 'header' || (c.anchor_hits || []).includes('header'),\n  isFooter: c.section_label === 'footer' || (c.anchor_hits || []).includes('footer'),\n})));\nconst headerYs = imageRowsAll.filter((x) => x.isHeader).map((x) => x.y);\nconst footerYs = imageRowsAll.filter((x) => x.isFooter).map((x) => x.y);\nlet originTopLeft = true;\nif (headerYs.length && footerYs.length) {\n  originTopLeft = avg(headerYs) < avg(footerYs);\n} else if (typeof allComponents[0]?.coordinate_origin === 'string') {\n  originTopLeft = allComponents[0].coordinate_origin === 'top_left';\n}\n\nconst componentById = new Map(allComponents.map((c) => [c.component_id, c]));\n\nconst pageExtents = {};\nfor (const comp of allComponents) {\n  for (const img of (comp.images || [])) {\n    const p = Number(img?.page_number || 1);\n    const x0 = Number(img?.bbox?.x0 ?? 0);\n    const x1 = Number(img?.bbox?.x1 ?? 0);\n    if (!pageExtents[p]) pageExtents[p] = { minX: Number.POSITIVE_INFINITY, maxX: Number.NEGATIVE_INFINITY };\n    pageExtents[p].minX = Math.min(pageExtents[p].minX, x0);\n    pageExtents[p].maxX = Math.max(pageExtents[p].maxX, x1);\n  }\n}\nconst pageWidthByPage = {};\nfor (const [k, v] of Object.entries(pageExtents)) {\n  const width = Math.max(1, Number(v.maxX) - Number(v.minX));\n  pageWidthByPage[Number(k)] = width;\n}\n\nconst buildRowsFromImages = (imgs, yThreshold = 90) => {\n  const sorted = [...imgs].sort((a, b) => {\n    const ay = (Number(a?.bbox?.y0 ?? 0) + Number(a?.bbox?.y1 ?? 0)) / 2;\n    const by = (Number(b?.bbox?.y0 ?? 0) + Number(b?.bbox?.y1 ?? 0)) / 2;\n    const primary = originTopLeft ? (ay - by) : (by - ay);\n    if (primary !== 0) return primary;\n    return Number(a?.bbox?.x0 ?? 0) - Number(b?.bbox?.x0 ?? 0);\n  });\n\n  const rows = [];\n  for (const img of sorted) {\n    const y0 = Number(img?.bbox?.y0 ?? 0);\n    const y1 = Number(img?.bbox?.y1 ?? 0);\n    const yCenter = (y0 + y1) / 2;\n\n    let row = null;\n    for (const r of rows) {\n      const gap = Math.abs(r.yCenter - yCenter);\n      const overlap = Math.min(r.maxY, y1) - Math.max(r.minY, y0);\n      if (gap <= yThreshold || overlap >= -8) {\n        row = r;\n        break;\n      }\n    }\n\n    if (!row) {\n      rows.push({ images: [img], minY: y0, maxY: y1, yCenter });\n    } else {\n      row.images.push(img);\n      row.minY = Math.min(row.minY, y0);\n      row.maxY = Math.max(row.maxY, y1);\n      row.yCenter = (row.minY + row.maxY) / 2;\n    }\n  }\n\n  for (const row of rows) {\n    row.images.sort((a, b) => Number(a?.bbox?.x0 ?? 0) - Number(b?.bbox?.x0 ?? 0));\n  }\n\n  return rows.sort((a, b) => {\n    const primary = originTopLeft ? (a.yCenter - b.yCenter) : (b.yCenter - a.yCenter);\n    return primary;\n  });\n};\n\nconst clamp = (n, min, max) => Math.max(min, Math.min(max, n));\n\nconst buildFallbackComponentHtml = (componentId) => {\n  const comp = componentById.get(componentId) || {};\n  const imgs = Array.isArray(comp.images) ? comp.images.filter((x) => x?.url) : [];\n  if (!imgs.length) return '';\n\n  const yValues = imgs.flatMap((img) => [Number(img?.bbox?.y0 ?? 0), Number(img?.bbox?.y1 ?? 0)]);\n  const pageNo = Number(imgs[0]?.page_number || 1);\n  const pageWidth = Math.max(1, Number(pageWidthByPage[pageNo] || 620));\n  const pageHeight = Math.max(1, Math.max(...yValues) - Math.min(...yValues));\n\n  const rows = buildRowsFromImages(imgs, Math.max(70, pageHeight * 0.05));\n\n  const rowHtml = rows.map((row) => {\n    if (row.images.length === 1) {\n      const img = row.images[0];\n      const src = String(img?.url || '').trim();\n      if (!src) return '';\n      const alt = String(img?.ocr_text || img?.filename || 'imagen').replace(/\"/g, '&quot;').slice(0, 180);\n      const bboxWidth = Math.max(1, Number(img?.bbox?.x1 ?? 0) - Number(img?.bbox?.x0 ?? 0));\n      const widthPx = clamp(Math.round((bboxWidth / pageWidth) * 620), 24, 620);\n      const useFullWidth = widthPx >= 560;\n      const align = useFullWidth ? 'left' : 'center';\n      const widthAttr = useFullWidth ? '620' : String(widthPx);\n      const widthStyle = useFullWidth ? 'width:100%;max-width:620px;' : `width:${widthPx}px;max-width:100%;`;\n\n      return `<tr><td align=\"${align}\" style=\"padding:0;overflow:hidden;\"><img src=\"${src}\" alt=\"${alt}\" width=\"${widthAttr}\" style=\"display:block;${widthStyle}height:auto;object-fit:contain;border:0;outline:none;text-decoration:none;\"/></td></tr>`;\n    }\n\n    const widths = row.images.map((img) => Math.max(1, Number(img?.bbox?.x1 ?? 0) - Number(img?.bbox?.x0 ?? 0)));\n    const totalWidth = Math.max(1, widths.reduce((a, b) => a + b, 0));\n\n    const cols = row.images.map((img, idx) => {\n      const src = String(img?.url || '').trim();\n      if (!src) return '';\n      const alt = String(img?.ocr_text || img?.filename || 'imagen').replace(/\"/g, '&quot;').slice(0, 180);\n      const pct = clamp(Math.round((widths[idx] / totalWidth) * 1000) / 10, 8, 92);\n      return `<td valign=\"top\" width=\"${pct}%\" style=\"width:${pct}%;padding:0;overflow:hidden;\"><img src=\"${src}\" alt=\"${alt}\" style=\"display:block;width:100%;max-width:100%;height:auto;object-fit:cover;border:0;outline:none;text-decoration:none;\"/></td>`;\n    }).join('');\n\n    return `<tr><td style=\"padding:0;\"><table role=\"none\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" style=\"width:100%;\"><tr>${cols}</tr></table></td></tr>`;\n  }).join('');\n\n  if (!rowHtml) return '';\n\n  return `<table role=\"none\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"620\" style=\"width:620px;max-width:620px;background:#ffffff;\"><tr><td style=\"padding:0;\"><!-- fallback_component:${componentId} --></td></tr>${rowHtml}</table>`;\n};\n\nconst generatedById = {};\nconst parseErrors = [];\nconst modelItems = $items('Valida componente con Claude');\nconst preparedItems = $items('Prepara OCR por componente').map((i) => i.json || {});\n\nfor (let i = 0; i < modelItems.length; i++) {\n  const item = modelItems[i];\n  const fallbackComponentId = preparedItems[i]?.component_id || component_order[i] || '';\n  const raw = extractText(item.json);\n  const parsed = parseModelResult(raw, fallbackComponentId);\n\n  if (!parsed || !parsed.component_id || !parsed.component_html) {\n    parseErrors.push({ component_id: fallbackComponentId || null, reason: 'parse_failed' });\n    continue;\n  }\n\n  generatedById[parsed.component_id] = {\n    component_html: parsed.component_html,\n    changed: Boolean(parsed.changed),\n    reason: parsed.reason || null,\n    source: parsed.source || 'unknown',\n  };\n}\n\nconst fallbackIds = [];\nconst htmlParts = [];\nfor (const componentId of component_order) {\n  const generated = generatedById[componentId]?.component_html;\n  const fallback = buildFallbackComponentHtml(componentId);\n  const fragment = generated || fallback;\n  if (!generated) fallbackIds.push(componentId);\n  if (fragment) htmlParts.push(fragment);\n}\n\nconst bodyContent = decodeEsc(htmlParts.join('\\n'));\nconst htmlFinal = `<!DOCTYPE html>\\n<html lang=\"es\">\\n<head>\\n<meta charset=\"UTF-8\">\\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\\n<title>Newsletter</title>\\n</head>\\n<body style=\"margin:0;padding:0;background:#E0E0E0;\">\\n<table role=\"none\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" style=\"width:100%;background:#E0E0E0;\">\\n<tr><td align=\"center\" style=\"padding:0;\">\\n<table role=\"none\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"620\" style=\"width:620px;max-width:620px;\" class=\"container\">\\n<tr><td style=\"padding:0;\">\\n${bodyContent}\\n</td></tr>\\n</table>\\n</td></tr>\\n</table>\\n</body>\\n</html>`;\n\nconst generatedCount = Object.keys(generatedById).length;\nconst componentsSummary = component_order.map((id) => ({\n  component_id: id,\n  generated: Boolean(generatedById[id]),\n  generation_source: generatedById[id]?.source || null,\n  presence_confidence: (allComponents.find((c) => c.component_id === id) || {}).presence_confidence ?? null,\n  anchor_hits: (allComponents.find((c) => c.component_id === id) || {}).anchor_hits ?? [],\n}));\n\nconst wireframeImageMap = allComponents\n  .slice()\n  .sort((a, b) => (a.order || 0) - (b.order || 0))\n  .map((c) => ({\n    component_id: c.component_id,\n    section_label: c.section_label || null,\n    order: c.order ?? null,\n    images: (c.images || []).map((img) => ({\n      filename: img.filename || null,\n      url: img.url || null,\n      confidence: img.confidence ?? null,\n      bbox: img.bbox || null,\n      ocr_text: img.ocr_text || '',\n    })),\n  }));\n\nconst mappedImagesTotal = wireframeImageMap.reduce((acc, c) => acc + (Array.isArray(c.images) ? c.images.length : 0), 0);\n\nreturn [{\n  json: {\n    success: true,\n    message: `HTML final generado. Componentes refinados por LLM: ${generatedCount}/${component_order.length}.`,\n    pdf_url,\n    render_png_url,\n    session_id,\n    response_mode: responseMode,\n    components_total: component_order.length,\n    template_baseline: 'container_620_bg_E0E0E0',\n    integrity: { final_equals_baseline: false },\n    coordinate_origin: originTopLeft ? 'top_left' : 'bottom_left',\n    components_generated: generatedCount,\n    components_fallback: fallbackIds,\n    parse_errors: parseErrors,\n    components: componentsSummary,\n    wireframe_image_map: wireframeImageMap,\n    mapped_images_total: mappedImagesTotal,\n    html_final: htmlFinal,\n    html_final_pretty: htmlFinal,\n    html_final_compact: htmlFinal.replace(/\\r?\\n/g, ''),\n  },\n}];"
+      },
+      "id": "cff3dd4f-e706-4788-9e31-b7e3010d34a8",
+      "name": "Ensambla HTML final",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        136048,
+        -1744
+      ]
+    },
+    {
+      "parameters": {
+        "html": "={{ $json.html_final }}"
+      },
+      "id": "9a1cb502-ea29-437b-9ffa-8bfb7a9ba720",
+      "name": "Preview HTML (ensamblado)",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        136272,
+        -1744
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $items('Ensambla HTML final')[0]?.json || {};\nconst rendered = $json.html || base.html_final || '';\n\nconst decodeEsc = value => {\n  const text = String(value || '');\n  return text.replace(/\\\\n/g, '\\n').replace(/\\\\r/g, '\\r').replace(/\\\\t/g, '\\t').replace(/\\\\\"/g, '\"').replace(/\\\\\\//g, '/');\n};\n\nconst htmlDecoded = decodeEsc(rendered);\n\nreturn [{\n  json: {\n    ...base,\n    html: htmlDecoded,\n    html_final: htmlDecoded,\n    html_final_pretty: htmlDecoded,\n    html_final_compact: htmlDecoded.replace(/\\r?\\n/g, ''),\n  },\n}];"
+      },
+      "id": "b8a30680-bd6b-43df-a7a9-cdce1edf688e",
+      "name": "Normaliza HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        136496,
+        -1744
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $json || {};\n\nconst allComponents = $items('Clasifica PDF en componentes');\nconst ocrLines = [];\nfor (const item of allComponents) {\n  for (const img of (item.json.images || [])) {\n    if (img.ocr_text && img.ocr_text.trim()) ocrLines.push(img.ocr_text.trim());\n  }\n  if (ocrLines.length >= 300) break;\n}\nconst ocrTextExcerpt = ocrLines.join('\\n').slice(0, 3000);\n\nconst parseMetaJson = $items('Parse Metadata')[0]?.json || {};\nconst renderPngUrl = base.render_ocr_png_url || base.render_png_url || parseMetaJson.render_ocr_png_url || parseMetaJson.render_png_url || null;\nconst skipOcrValidator = !base.html_final;\n\nconst mapSummary = (base.wireframe_image_map || [])\n  .slice(0, 30)\n  .map((section, idx) => {\n    const urls = (section.images || []).slice(0, 6).map((img) => img.url).filter(Boolean);\n    return `${idx + 1}. ${section.section_label || section.component_id || 'seccion'} | imgs=${(section.images || []).length} | sample_urls=${urls.join(' , ')}`;\n  })\n  .join('\\n');\n\nconst claudePrompt = skipOcrValidator\n  ? `Devuelve exactamente este JSON sin cambios: {\"html_final\":${JSON.stringify(base.html_final || '')},\"changed\":false,\"reason\":\"skip_ocr_validator=true\"}`\n  : `Eres un validador visual final de emails HTML. Debes comparar el HTML contra el render.png adjunto y devolver una version lo mas exacta posible al PDF original.\n\nOBJETIVO:\n- Minimizar diferencias visuales con el render.png (estructura, alineacion, espaciados, jerarquia tipografica, colores, anchos y alturas, margenes/paddings, fondos, bordes y tamano de imagenes).\n- Si detectas diferencias, corrigelas en el HTML.\n- Si ya esta correcto, devuelve el mismo HTML.\n\nREGLAS:\n1) Mantener todas las secciones en el orden visual del render.\n2) No inventar URLs nuevas de imagen. Usa las que ya existen en el HTML o en el mapa.\n3) No borrar contenido real salvo que claramente no exista en el render.\n4) Mantener placeholders si aparecen (ej: {(FULLNAME)}, {(EMAIL)}, {(LAST_5)}, {(MEMBER_SINCE)}, {(URLSignature1)}).\n5) HTML de email compatible: tablas + CSS inline, sin JS, sin CSS externo.\n\nFORMATO DE SALIDA (SOLO JSON valido, sin markdown):\n{\"html_final\":\"string\",\"changed\":true,\"reason\":\"string\"}\n\nrender_png_url=${renderPngUrl || ''}\nwireframe_image_map_resumen:\n${mapSummary || '(sin mapa)'}\n\nocr_text_excerpt:\n${ocrTextExcerpt}\n\nhtml_final_actual:\n${base.html_final || ''}`;\n\nreturn [{\n  json: {\n    ...base,\n    ocr_text_excerpt: ocrTextExcerpt,\n    ocr_line_count: ocrLines.length,\n    skip_ocr_validator: skipOcrValidator,\n    claude_prompt: claudePrompt,\n    render_png_url: renderPngUrl,\n  },\n}];"
+      },
+      "id": "a4bd8760-54f3-48af-bff5-402d5c7e8268",
+      "name": "Prepara validacion OCR",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        136720,
+        -1744
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "modelId": {
+          "__rl": true,
+          "value": "claude-sonnet-4-5-20250929",
+          "mode": "list",
+          "cachedResultName": "claude-sonnet-4-5-20250929"
+        },
+        "text": "={{ $json.claude_prompt }}",
+        "options": {
+          "maxTokens": 32768
+        },
+        "inputType": "url",
+        "operation": "analyze",
+        "imageUrls": "={{ $json.render_ocr_png_url || $json.render_png_url || $('Parse Metadata').item.json.metadata.render_ocr_png_url || $('Parse Metadata').item.json.metadata.render_png_url || $json.pdf_url }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.anthropic",
+      "typeVersion": 1,
+      "position": [
+        136944,
+        -1744
+      ],
+      "id": "e365d29c-6685-4097-bd8f-c8b0f6d477fe",
+      "name": "Valida HTML final con Claude",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 10000,
+      "credentials": {
+        "anthropicApi": {
+          "id": "0jcs0BuBIANeAsiG",
+          "name": "Anthropic account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $items('Prepara validacion OCR')[0]?.json || {};\n\nconst extractText = json => {\n  const candidates = [json?.content?.[0]?.text, json?.output, json?.text, json?.response, json?.content, json?.message, json?.result, json?.data];\n  for (const v of candidates) { if (typeof v === 'string' && v.trim()) return v; }\n  return JSON.stringify(json || {});\n};\n\nconst parseModelJson = raw => {\n  let text = String(raw || '').trim();\n  text = text.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/i, '').trim();\n  const s = text.indexOf('{'), e = text.lastIndexOf('}');\n  if (s >= 0 && e > s) { try { return JSON.parse(text.slice(s, e + 1)); } catch(_) {} }\n  try { return JSON.parse(text); } catch(_) { return null; }\n};\n\nconst decodeEsc = value => {\n  const text = String(value || '');\n  return text.replace(/\\\\n/g, '\\n').replace(/\\\\r/g, '\\r').replace(/\\\\t/g, '\\t').replace(/\\\\\"/g, '\"').replace(/\\\\\\//g, '/');\n};\n\nif (base.skip_ocr_validator) {\n  return [{\n    json: {\n      ...base,\n      ocr_validator: { skipped: true, applied: false, changed: false, reason: 'skip_ocr_validator=true' },\n    },\n  }];\n}\n\nconst parsed = parseModelJson(extractText($json));\nlet htmlAdjusted = (parsed && typeof parsed.html_final === 'string' && parsed.html_final.trim())\n  ? parsed.html_final\n  : (base.html_final || '');\nhtmlAdjusted = decodeEsc(htmlAdjusted);\n\nreturn [{\n  json: {\n    ...base,\n    html_final: htmlAdjusted,\n    html_final_pretty: htmlAdjusted,\n    html_final_compact: htmlAdjusted.replace(/\\r?\\n/g, ''),\n    ocr_validator: { skipped: false, applied: true, changed: Boolean(parsed?.changed), reason: parsed?.reason || null },\n  },\n}];"
+      },
+      "id": "3ee8f9d0-7b2b-4503-a412-41fdd7b6f0be",
+      "name": "Aplica correccion OCR",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        137168,
+        -1744
+      ]
+    },
+    {
+      "parameters": {
+        "html": "={{ $json.html_final || $json.html || '' }}"
+      },
+      "id": "fc4beba4-a647-4e03-9608-918c01f12f05",
+      "name": "Preview HTML (final)",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        137392,
+        -1744
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $json || {};\nconst inputHtml = String(base.html || base.html_final || '');\n\nif (!inputHtml.trim()) return [{ json: { ...base, layout_adjusted: false, layout_reason: 'empty_html' } }];\n\nlet html = inputHtml;\n\nconst addCss = (style, css) => {\n  const s = String(style || '').trim();\n  if (!s) return css;\n  if (s.toLowerCase().includes(css.split(':')[0].toLowerCase())) return s;\n  return `${s}; ${css}`;\n};\n\n// Asegura que NINGUNA imagen desborde su contenedor\nhtml = html.replace(/<img\\b([^>]*?)>/gi, (m, attrs) => {\n  let out = attrs;\n\n  const widthMatch = out.match(/\\bwidth\\s*=\\s*\"?(\\d+)/i);\n  const widthNum = widthMatch ? Number(widthMatch[1]) : null;\n  if (Number.isFinite(widthNum) && widthNum > 620) {\n    if (/\\bwidth\\s*=\\s*\"[^\"]*\"/i.test(out)) out = out.replace(/\\bwidth\\s*=\\s*\"[^\"]*\"/i, 'width=\"100%\"');\n    else out += ' width=\"100%\"';\n  }\n\n  if (/\\bstyle\\s*=\\s*\"([^\"]*)\"/i.test(out)) {\n    out = out.replace(/\\bstyle\\s*=\\s*\"([^\"]*)\"/i, (_sm, s) => {\n      let ns = s;\n      ns = addCss(ns, 'display:block');\n      ns = addCss(ns, 'max-width:100% !important');\n      ns = addCss(ns, 'height:auto !important');\n      ns = addCss(ns, 'box-sizing:border-box');\n      return `style=\"${ns}\"`;\n    });\n  } else {\n    out += ' style=\"display:block;max-width:100% !important;height:auto !important;box-sizing:border-box;\"';\n  }\n\n  return `<img${out}>`;\n});\n\n// Mantener también full-width para imagenes principales\nhtml = html.replace(/<img\\b([^>]*?)>/gi, (m, attrs) => {\n  const widthMatch = attrs.match(/\\bwidth\\s*=\\s*\"?(\\d+)/i);\n  const widthNum = widthMatch ? Number(widthMatch[1]) : null;\n  if (!Number.isFinite(widthNum) || widthNum < 560) return `<img${attrs}>`;\n\n  let out = attrs;\n  if (/\\bwidth\\s*=\\s*\"[^\"]*\"/i.test(out)) out = out.replace(/\\bwidth\\s*=\\s*\"[^\"]*\"/i, 'width=\"100%\"');\n  else out += ' width=\"100%\"';\n\n  if (/\\bstyle\\s*=\\s*\"([^\"]*)\"/i.test(out)) {\n    out = out.replace(/\\bstyle\\s*=\\s*\"([^\"]*)\"/i, (_sm, s) => {\n      let ns = addCss(s, 'width:100% !important');\n      ns = addCss(ns, 'max-width:100% !important');\n      ns = addCss(ns, 'height:auto !important');\n      ns = addCss(ns, 'display:block');\n      return `style=\"${ns}\"`;\n    });\n  } else {\n    out += ' style=\"width:100% !important;max-width:100% !important;height:auto !important;display:block;\"';\n  }\n  return `<img${out}>`;\n});\n\nreturn [{\n  json: {\n    ...base,\n    html,\n    html_final: html,\n    html_final_pretty: html,\n    html_final_compact: html.replace(/\\r?\\n/g, ''),\n    layout_adjusted: true,\n    layout_reason: 'post_ocr_layout_tune',\n  },\n}];"
+      },
+      "id": "965ea4c5-f8f9-4b87-bcbe-6417137a9dcf",
+      "name": "Ajusta layout",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        137616,
+        -1744
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html_final || $json.html || '' }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "96e5ed75-9557-4447-bb16-9fd1ae546ddd",
+      "name": "Responde webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        137840,
+        -1744
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Start": {
+      "main": [
+        [
+          {
+            "node": "Validate + Defaults",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate + Defaults": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Images (ZIP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Images (ZIP)": {
+      "main": [
+        [
+          {
+            "node": "Extract ZIP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract ZIP": {
+      "main": [
+        [
+          {
+            "node": "Parse Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Metadata": {
+      "main": [
+        [
+          {
+            "node": "arma wireframe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "arma wireframe": {
+      "main": [
+        [
+          {
+            "node": "Build Gemini Prompt con base de wireframe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Gemini Prompt con base de wireframe": {
+      "main": [
+        [
+          {
+            "node": "Analyze document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze document": {
+      "main": [
+        [
+          {
+            "node": "Parse Gemini Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Gemini Response": {
+      "main": [
+        [
+          {
+            "node": "Clasifica PDF en componentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clasifica PDF en componentes": {
+      "main": [
+        [
+          {
+            "node": "Crea orden del loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crea orden del loop": {
+      "main": [
+        [
+          {
+            "node": "Loop por componente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop por componente": {
+      "main": [
+        [
+          {
+            "node": "Ensambla HTML final",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepara payload del componente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepara payload del componente": {
+      "main": [
+        [
+          {
+            "node": "Prepara OCR por componente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepara OCR por componente": {
+      "main": [
+        [
+          {
+            "node": "Omitir si skip_generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Omitir si skip_generation": {
+      "main": [
+        [
+          {
+            "node": "Espera entre iteraciones",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Valida componente con Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valida componente con Claude": {
+      "main": [
+        [
+          {
+            "node": "Espera entre iteraciones",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Espera entre iteraciones": {
+      "main": [
+        [
+          {
+            "node": "Loop por componente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ensambla HTML final": {
+      "main": [
+        [
+          {
+            "node": "Preview HTML (ensamblado)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preview HTML (ensamblado)": {
+      "main": [
+        [
+          {
+            "node": "Normaliza HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliza HTML": {
+      "main": [
+        [
+          {
+            "node": "Prepara validacion OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepara validacion OCR": {
+      "main": [
+        [
+          {
+            "node": "Valida HTML final con Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valida HTML final con Claude": {
+      "main": [
+        [
+          {
+            "node": "Aplica correccion OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aplica correccion OCR": {
+      "main": [
+        [
+          {
+            "node": "Preview HTML (final)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preview HTML (final)": {
+      "main": [
+        [
+          {
+            "node": "Ajusta layout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ajusta layout": {
+      "main": [
+        [
+          {
+            "node": "Responde webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "85e059f4aee455b17b99f6cf0a9a0dcaf7263d509f60b9468ab86731a4d11843"
+  },
+  "id": "PDFtoHTML_v3_render_png",
+  "tags": []
+}
